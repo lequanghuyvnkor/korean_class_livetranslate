@@ -99,16 +99,27 @@
                         <i class="fa-solid fa-arrows-rotate"></i>
                     </button>
                 </div>
+
+                <!-- Quick Preset Mode Buttons -->
+                <div class="preset-modes mb-2" style="display: flex; gap: 0.4rem;">
+                    <button class="btn btn-sm btn-outline active" id="btnModeMic" style="flex: 1; font-size: 0.75rem; padding: 0.4rem 0.2rem;" title="Thu giọng giáo sư trên bục giảng">
+                        🎙️ Giảng Đường (Mic)
+                    </button>
+                    <button class="btn btn-sm btn-outline" id="btnModeOnline" style="flex: 1; font-size: 0.75rem; padding: 0.4rem 0.2rem;" title="Thu âm Youtube / Zoom / Video bài giảng">
+                        💻 Học Online (Stereo Mix)
+                    </button>
+                </div>
+
                 <div class="form-group">
-                    <label for="deviceSelect">Chọn Micro đầu vào:</label>
+                    <label for="deviceSelect">Chọn Thiết Bị Thu Âm:</label>
                     <select id="deviceSelect" class="form-control">
                         <option value="">Default Microphone</option>
                     </select>
                 </div>
-                <div class="tip-box">
-                    <i class="fa-solid fa-circle-info"></i>
-                    <span>Đặt laptop hoặc mic rời gần giáo sư để nhận diện chính xác nhất.</span>
-                </div>
+                
+                <button class="btn btn-secondary btn-sm full-width mt-1" id="openSoundSettingsBtn" style="font-size: 0.75rem;" title="Mở Control Panel để bật Stereo Mix">
+                    <i class="fa-solid fa-gear"></i> Mở Cài Đặt Windows Bật Stereo Mix
+                </button>
             </div>
 
             <!-- AI Engine & Vocabulary Booster -->

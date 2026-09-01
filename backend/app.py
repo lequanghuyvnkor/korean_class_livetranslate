@@ -116,6 +116,16 @@ def get_devices():
     devices = AudioManager.get_input_devices()
     return {"devices": devices, "current_device": audio_mgr.device_index, "is_recording": audio_mgr.is_recording}
 
+@app.post("/api/open_sound_settings")
+def open_sound_settings():
+    """Open Windows Sound Control Panel (mmsys.cpl) for user to enable Stereo Mix easily"""
+    try:
+        import subprocess
+        subprocess.Popen(["control", "mmsys.cpl", ",1"])
+        return {"status": "success", "message": "Opened Windows Sound Settings"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/api/start")
 async def start_recording(payload: dict = Body(default={})):
     """Start listening to specified or default microphone"""

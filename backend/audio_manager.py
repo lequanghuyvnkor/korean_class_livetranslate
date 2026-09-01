@@ -41,18 +41,30 @@ class AudioManager:
             for idx, dev in enumerate(device_list):
                 if dev.get('max_input_channels', 0) > 0:
                     raw_name = dev.get('name', f'Microphone {idx}')
-                    # Clean any non-ascii or driver metadata clutter
                     clean_name = raw_name.encode('ascii', errors='ignore').decode('ascii').strip()
                     if not clean_name:
                         clean_name = f"Microphone Device [{idx}]"
                         
-                    if clean_name in seen_names:
-                        clean_name = f"{clean_name} (Input #{idx})"
-                    seen_names.add(clean_name)
+                    is_sm = "stereo mix" in clean_name.lower() or "waveout" in clean_name.lower() or "what u hear" in clean_name.lower()
+                    
+                    if is_sm:
+                        friendly_name = f"💻 [Stereo Mix] Am Thanh May Tinh (Youtube / Zoom / Video)"
+                    elif "array" in clean_name.lower() or "microphone" in clean_name.lower():
+                        friendly_name = f"🎙️ {clean_name}"
+                    elif "headset" in clean_name.lower() or "hands-free" in clean_name.lower():
+                        friendly_name = f"🎧 {clean_name}"
+                    else:
+                        friendly_name = f"🎙️ {clean_name}"
+                        
+                    if friendly_name in seen_names:
+                        friendly_name = f"{friendly_name} (#{idx})"
+                    seen_names.add(friendly_name)
                     
                     devices.append({
                         "id": idx,
-                        "name": clean_name,
+                        "name": friendly_name,
+                        "raw_name": clean_name,
+                        "is_stereo_mix": is_sm,
                         "channels": dev.get('max_input_channels', 1),
                         "default_samplerate": dev.get('default_samplerate', 44100),
                         "is_default": (idx == default_input_idx)

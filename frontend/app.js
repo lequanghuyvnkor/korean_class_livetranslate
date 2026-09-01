@@ -226,6 +226,58 @@ function setupEventListeners() {
     // Refresh Devices
     refreshDevicesBtn.addEventListener("click", loadDevices);
     
+    // Preset Mode Buttons
+    const btnModeMic = document.getElementById("btnModeMic");
+    const btnModeOnline = document.getElementById("btnModeOnline");
+    const openSoundSettingsBtn = document.getElementById("openSoundSettingsBtn");
+
+    if (btnModeMic) {
+        btnModeMic.addEventListener("click", () => {
+            btnModeMic.classList.add("active");
+            if (btnModeOnline) btnModeOnline.classList.remove("active");
+            deviceSelect.value = "";
+            showToast("🎙️ Đã chuyển sang Chế độ Giảng Đường (Thu giọng giáo sư qua Micro)");
+        });
+    }
+
+    if (btnModeOnline) {
+        btnModeOnline.addEventListener("click", async () => {
+            btnModeOnline.classList.add("active");
+            if (btnModeMic) btnModeMic.classList.remove("active");
+            
+            // Search dropdown for Stereo Mix option
+            let foundIndex = -1;
+            for (let i = 0; i < deviceSelect.options.length; i++) {
+                const text = deviceSelect.options[i].textContent.toLowerCase();
+                if (text.includes("stereo mix") || text.includes("waveout") || text.includes("system audio") || text.includes("am thanh may tinh")) {
+                    foundIndex = i;
+                    break;
+                }
+            }
+
+            if (foundIndex !== -1) {
+                deviceSelect.selectedIndex = foundIndex;
+                showToast("💻 Đã chọn Chế độ Học Online (Bắt âm thanh Youtube/Zoom trong máy)");
+            } else {
+                showToast("⚠️ Stereo Mix chưa được bật. Đã tự động mở Cài đặt Windows để bạn bật trong 10s!");
+                try {
+                    await fetch("/api/open_sound_settings", { method: "POST" });
+                } catch (e) {}
+            }
+        });
+    }
+
+    if (openSoundSettingsBtn) {
+        openSoundSettingsBtn.addEventListener("click", async () => {
+            try {
+                await fetch("/api/open_sound_settings", { method: "POST" });
+                showToast("Đã mở Cài đặt Windows! Nhấp chuột phải vào Stereo Mix chọn Enable.");
+            } catch (e) {
+                showToast("Không thể mở tự động. Vui lòng nhấn Windows + R gõ mmsys.cpl");
+            }
+        });
+    }
+    
     // Model Select
     modelSelect.addEventListener("change", async () => {
         const model = modelSelect.value;
