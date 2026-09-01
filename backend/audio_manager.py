@@ -40,13 +40,14 @@ class AudioManager:
             for idx, mic in enumerate(all_mics):
                 display_name = mic.name
                 if mic.isloopback:
-                    display_name = f"🔊 [System Audio Loopback] {mic.name} (Âm thanh trong máy/Youtube/Zoom)"
+                    display_name = f"[System Audio Loopback] {mic.name} - Am thanh trong may (Youtube/Zoom)"
                 else:
-                    display_name = f"🎙️ [Microphone] {mic.name}"
+                    display_name = f"[Microphone] {mic.name}"
                     
                 devices.append({
                     "id": mic.id,
                     "name": display_name,
+                    "channels": 1,
                     "is_loopback": mic.isloopback,
                     "is_default": (idx == 0)
                 })

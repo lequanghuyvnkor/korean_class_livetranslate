@@ -465,16 +465,19 @@ async function loadDevices() {
         
         const defOpt = document.createElement("option");
         defOpt.value = "";
-        defOpt.textContent = "Default Microphone (Mặc định)";
+        defOpt.textContent = "Default Microphone / System Audio";
         deviceSelect.appendChild(defOpt);
         
-        data.devices.forEach(dev => {
-            const opt = document.createElement("option");
-            opt.value = dev.id;
-            opt.textContent = `${dev.name} (${dev.channels}ch)`;
-            if (dev.is_default) opt.textContent += " [Default]";
-            deviceSelect.appendChild(opt);
-        });
+        if (data.devices && Array.isArray(data.devices)) {
+            data.devices.forEach(dev => {
+                const opt = document.createElement("option");
+                opt.value = dev.id;
+                const chStr = dev.channels ? ` (${dev.channels}ch)` : "";
+                opt.textContent = `${dev.name}${chStr}`;
+                if (dev.is_default) opt.textContent += " [Default]";
+                deviceSelect.appendChild(opt);
+            });
+        }
         showToast("Đã cập nhật danh sách micro");
     } catch (e) {
         console.error("Error loading devices:", e);
