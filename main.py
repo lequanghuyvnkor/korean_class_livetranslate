@@ -1,5 +1,10 @@
-import sys
 import os
+import sys
+
+# Fix Windows Anaconda OpenMP collision crash
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "4"
+
 import webbrowser
 import threading
 import time

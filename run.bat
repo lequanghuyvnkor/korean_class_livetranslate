@@ -8,6 +8,9 @@ echo.
 
 cd /d "%~dp0"
 
+set KMP_DUPLICATE_LIB_OK=TRUE
+set OMP_NUM_THREADS=4
+
 echo [*] Checking Python installation...
 where python >nul 2>&1
 if %errorlevel% neq 0 (

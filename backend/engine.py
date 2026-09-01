@@ -1,6 +1,12 @@
 import os
+import sys
+
+# Prevent OpenMP crash on Windows Intel CPU / Anaconda
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 import time
 import logging
+
 import numpy as np
 from typing import Dict, Any, Optional
 

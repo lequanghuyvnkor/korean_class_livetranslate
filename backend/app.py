@@ -1,6 +1,12 @@
 import os
+import sys
+
+# Prevent OpenMP crash on Windows Intel CPU / Anaconda
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 import asyncio
 import json
+
 import logging
 from typing import Set
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
