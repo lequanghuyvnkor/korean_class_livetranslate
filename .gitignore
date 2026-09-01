@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+venv/
+.venv/
+.cache/
+transcripts/*.md
+transcripts/*.srt
+!transcripts/.gitkeep

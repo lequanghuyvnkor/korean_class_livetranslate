@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Korean Live Lecture Translator | 실시간 강의 번역</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-dark">
+
+    <!-- Top Navigation Bar -->
+    <header class="app-header">
+        <div class="header-left">
+            <div class="logo-badge">
+                <i class="fa-solid fa-language"></i>
+            </div>
+            <div class="logo-text">
+                <h1>Korean Live <span>Translator</span></h1>
+                <p class="subtitle">실시간 강의 통번역 • Offline Faster-Whisper AI</p>
+            </div>
+        </div>
+
+        <div class="header-center">
+            <!-- Audio Activity Visualizer -->
+            <div class="audio-monitor" id="audioMonitor">
+                <div class="mic-status-icon" id="micStatusIcon">
+                    <i class="fa-solid fa-microphone-slash"></i>
+                </div>
+                <div class="waveform-bars">
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                </div>
+                <div class="volume-badge" id="volumeBadge">0%</div>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <!-- HUD Overlay Popout Toggle -->
+            <button class="btn btn-hud" id="hudToggleBtn" title="Chế độ Overlay ghim nổi trên Slide bài giảng">
+                <i class="fa-solid fa-window-restore"></i> HUD Overlay
+            </button>
+            <!-- Start / Stop Primary Button -->
+            <button class="btn btn-primary" id="mainRecordBtn">
+                <i class="fa-solid fa-play"></i> <span id="recordBtnText">Start Listening</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-layout" id="mainLayout">
+        
+        <!-- Left Sidebar: Controls & Settings -->
+        <aside class="sidebar-panel">
+            
+            <!-- Lecture Session Card -->
+            <div class="glass-card">
+                <div class="card-header">
+                    <h3><i class="fa-solid fa-graduation-cap"></i> Lecture Session</h3>
+                    <span class="badge" id="sessionStatusBadge">Ready</span>
+                </div>
+                <div class="form-group">
+                    <label for="lectureTitle">Tên Môn / Bài Giảng:</label>
+                    <input type="text" id="lectureTitle" class="form-control" placeholder="VD: Computer Networks - Week 3" value="University_Lecture">
+                </div>
+                <div class="session-meta">
+                    <div class="meta-item">
+                        <span class="label">Thời lượng:</span>
+                        <span class="val" id="sessionTimer">00:00:00</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="label">Số câu đã thu:</span>
+                        <span class="val" id="sentenceCount">0</span>
+                    </div>
+                </div>
+                <button class="btn btn-secondary btn-sm full-width mt-2" id="newSessionBtn">
+                    <i class="fa-solid fa-rotate-left"></i> Tạo Phiên Học Mới
+                </button>
+            </div>
+
+            <!-- Audio Input Device Selector -->
+            <div class="glass-card">
+                <div class="card-header">
+                    <h3><i class="fa-solid fa-sliders"></i> Microphone Setup</h3>
+                    <button class="btn-icon" id="refreshDevicesBtn" title="Làm mới danh sách mic">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                    </button>
+                </div>
+                <div class="form-group">
+                    <label for="deviceSelect">Chọn Micro đầu vào:</label>
+                    <select id="deviceSelect" class="form-control">
+                        <option value="">Default Microphone</option>
+                    </select>
+                </div>
+                <div class="tip-box">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>Đặt laptop hoặc mic rời gần giáo sư để nhận diện chính xác nhất.</span>
+                </div>
+            </div>
+
+            <!-- AI Engine & Vocabulary Booster -->
+            <div class="glass-card">
+                <div class="card-header">
+                    <h3><i class="fa-solid fa-microchip"></i> AI Engine Settings</h3>
+                </div>
+                <div class="form-group">
+                    <label for="modelSelect">Whisper Model:</label>
+                    <select id="modelSelect" class="form-control">
+                        <option value="tiny">Tiny (Siêu nhẹ, latency thấp nhất ~0.1s)</option>
+                        <option value="base" selected>Base (Cân bằng, khuyên dùng CPU)</option>
+                        <option value="small">Small (Chính xác cao, từ vựng chuẩn)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="vocabPrompt">Thuật ngữ môn học (Glossary Booster):</label>
+                    <textarea id="vocabPrompt" class="form-control" rows="3" placeholder="Nhập các từ chuyên ngành: 인공지능, 운영체제, 회계학, 분자생물학...">한국어 대학교 강의, 전공 수업, 학술 용어</textarea>
+                    <button class="btn btn-secondary btn-sm mt-1" id="savePromptBtn">
+                        <i class="fa-solid fa-check"></i> Áp dụng từ điển
+                    </button>
+                </div>
+            </div>
+
+            <!-- Export Actions -->
+            <div class="glass-card">
+                <div class="card-header">
+                    <h3><i class="fa-solid fa-file-export"></i> Xuất Tài Liệu Học</h3>
+                </div>
+                <div class="export-buttons">
+                    <button class="btn btn-outline full-width mb-2" id="exportMdBtn">
+                        <i class="fa-brands fa-markdown"></i> Xuất Markdown (.md)
+                    </button>
+                    <button class="btn btn-outline full-width mb-2" id="exportSrtBtn">
+                        <i class="fa-solid fa-closed-captioning"></i> Xuất Phụ đề (.srt)
+                    </button>
+                    <button class="btn btn-accent full-width" id="copyAiPromptBtn">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Copy Prompt Tóm Tắt AI
+                    </button>
+                </div>
+            </div>
+
+        </aside>
+
+        <!-- Right Content: Live Subtitle Banner & Dual Transcript Stream -->
+        <section class="content-panel">
+            
+            <!-- Live Active Banner (Hero Subtitle Box) -->
+            <div class="live-hero-card" id="liveHeroCard">
+                <div class="live-header">
+                    <div class="status-indicator">
+                        <span class="pulse-dot" id="livePulseDot"></span>
+                        <span class="status-text" id="liveStatusText">Ready to listen</span>
+                    </div>
+                    <div class="font-controls">
+                        <button class="btn-icon" id="fontDecBtn" title="Giảm cỡ chữ"><i class="fa-solid fa-font"></i>-</button>
+                        <button class="btn-icon" id="fontIncBtn" title="Tăng cỡ chữ"><i class="fa-solid fa-font"></i>+</button>
+                        <button class="btn-icon" id="clearViewBtn" title="Xóa màn hình"><i class="fa-solid fa-eraser"></i></button>
+                    </div>
+                </div>
+
+                <div class="live-translation-display" id="liveDisplay">
+                    <!-- Korean Original -->
+                    <div class="korean-live-box">
+                        <div class="lang-tag"><span class="flag">🇰🇷</span> KOREAN (ORIGINAL)</div>
+                        <p class="korean-text" id="liveKoreanText">교수님의 한국어 강의 음성을 기다리는 중입니다...</p>
+                    </div>
+                    <!-- English Translation -->
+                    <div class="english-live-box">
+                        <div class="lang-tag"><span class="flag">🇬🇧</span> ENGLISH TRANSLATION</div>
+                        <p class="english-text" id="liveEnglishText">Waiting for Korean lecture speech to translate...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Full Dual-Transcript History Table -->
+            <div class="history-card">
+                <div class="history-header">
+                    <h2><i class="fa-solid fa-list-check"></i> Transcript Lịch Sử Bài Giảng</h2>
+                    <div class="history-actions">
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="searchTranscript" placeholder="Tìm kiếm từ khóa...">
+                        </div>
+                        <button class="btn btn-sm btn-secondary" id="autoScrollToggle">
+                            <i class="fa-solid fa-angles-down"></i> Auto-Scroll: ON
+                        </button>
+                    </div>
+                </div>
+
+                <div class="transcript-feed" id="transcriptFeed">
+                    <!-- Dynamic Transcript Items will be inserted here -->
+                    <div class="empty-state" id="emptyState">
+                        <i class="fa-solid fa-headphones-simple"></i>
+                        <p>Chưa có câu nào được ghi nhận. Bấm <strong>"Start Listening"</strong> để bắt đầu nghe giảng.</p>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Floating HUD Overlay Container (Activated in Overlay Mode) -->
+    <div class="hud-overlay-container" id="hudOverlayContainer" style="display: none;">
+        <div class="hud-bar">
+            <div class="hud-drag-handle">
+                <i class="fa-solid fa-grip-vertical"></i> <strong>HUD Live Subtitles</strong>
+            </div>
+            <div class="hud-controls">
+                <input type="range" id="hudOpacitySlider" min="0.3" max="1" step="0.05" value="0.85" title="Độ mờ kính">
+                <button class="btn-hud-tool" id="hudFontDec"><i class="fa-solid fa-minus"></i></button>
+                <button class="btn-hud-tool" id="hudFontInc"><i class="fa-solid fa-plus"></i></button>
+                <button class="btn-hud-tool" id="hudCloseBtn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="hud-content" id="hudContent">
+            <div class="hud-english" id="hudEnglishText">Waiting for Korean speech...</div>
+            <div class="hud-korean" id="hudKoreanText">한국어 강의 대기 중...</div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
