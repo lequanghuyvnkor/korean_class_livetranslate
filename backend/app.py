@@ -3,10 +3,10 @@ import sys
 
 # Prevent OpenMP crash on Windows Intel CPU / Anaconda
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "4"
 
 import asyncio
 import json
-
 import logging
 from typing import Set
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
@@ -17,6 +17,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .audio_manager import AudioManager
 from .engine import TranslatorEngine
 from .session_logger import SessionLogger
+from .audio_recorder import AudioRecorder
+from .subject_manager import SubjectManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AppServer")
@@ -24,8 +26,10 @@ logger = logging.getLogger("AppServer")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 TRANSCRIPTS_DIR = os.path.join(BASE_DIR, "transcripts")
+RECORDINGS_DIR = os.path.join(BASE_DIR, "recordings")
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
-app = FastAPI(title="Korean Live Lecture Translator API")
+app = FastAPI(title="Korean Live Lecture Translator & Study Manager")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,13 +41,12 @@ app.add_middleware(
 
 # Initialize core services
 audio_mgr = AudioManager()
-engine = TranslatorEngine(model_size="base")
-logger_mgr = SessionLogger(export_dir=TRANSCRIPTS_DIR)
+engine = TranslatorEngine(model_size="small")
+logger_mgr = SessionLogger(base_transcripts_dir=TRANSCRIPTS_DIR)
+recorder_mgr = AudioRecorder(base_dir=RECORDINGS_DIR)
+subject_mgr = SubjectManager(data_dir=DATA_DIR, transcripts_dir=TRANSCRIPTS_DIR, recordings_dir=RECORDINGS_DIR)
 
-# Connected WebSocket clients
 active_websockets: Set[WebSocket] = set()
-
-# Background translation worker task
 translation_task = None
 is_processing_active = False
 
@@ -67,11 +70,8 @@ async def audio_processing_worker():
     
     logger.info("Background audio processing worker started.")
     while is_processing_active:
-        # Check audio chunk from AudioManager
-        # Run blocking queue get and inference in executor thread to keep FastAPI responsive
         chunk = await loop.run_in_executor(None, audio_mgr.get_audio_chunk, 0.1)
         
-        # Also broadcast current volume RMS level for real-time waveform visualizer
         rms = audio_mgr.get_rms_level()
         await broadcast({
             "type": "volume_level",
@@ -80,16 +80,15 @@ async def audio_processing_worker():
         })
         
         if chunk is not None and len(chunk) > 0:
-            # Emit live 'processing' state
+            # Write frames to WAV recording file
+            recorder_mgr.write_frames(chunk)
+            
             await broadcast({"type": "status", "status": "translating"})
             
-            # Run Whisper translation in worker thread
             result = await loop.run_in_executor(None, engine.process_audio, chunk, "ko", "en")
             
             if result:
-                # Add to session log
                 entry = logger_mgr.add_entry(result)
-                # Broadcast translation to all HUDs & Dashboards
                 await broadcast({
                     "type": "translation",
                     "entry": entry
@@ -109,6 +108,7 @@ async def shutdown_event():
     global is_processing_active
     is_processing_active = False
     audio_mgr.stop()
+    recorder_mgr.stop_recording()
 
 @app.get("/api/devices")
 def get_devices():
@@ -128,23 +128,37 @@ def open_sound_settings():
 
 @app.post("/api/start")
 async def start_recording(payload: dict = Body(default={})):
-    """Start listening to specified or default microphone"""
+    """Start listening to specified microphone and start recording WAV file"""
     global translation_task, is_processing_active
     raw_device_id = payload.get("device_id", None)
+    subject_name = payload.get("subject", "General")
+    lecture_title = payload.get("title", "Lecture")
     
     device_id = None
     if raw_device_id is not None and str(raw_device_id).isdigit():
         device_id = int(raw_device_id)
-    
+        
+    # Start audio stream
     success = audio_mgr.start(device_index=device_id)
     if not success:
         raise HTTPException(status_code=500, detail="Could not access selected microphone.")
         
+    # Start session and WAV recording
+    logger_mgr.start_new_session(title=lecture_title, subject_name=subject_name)
+    recorder_mgr.start_recording(subject_name=subject_name, lecture_title=lecture_title)
+    
     is_processing_active = True
     if translation_task is None or translation_task.done():
         translation_task = asyncio.create_task(audio_processing_worker())
         
-    await broadcast({"type": "state_change", "is_recording": True, "device_id": device_id})
+    await broadcast({
+        "type": "state_change",
+        "is_recording": True,
+        "is_paused": False,
+        "device_id": device_id,
+        "subject": subject_name,
+        "title": lecture_title
+    })
     return {"status": "started", "device_id": device_id}
 
 @app.post("/api/pause")
@@ -163,17 +177,70 @@ async def resume_recording():
 
 @app.post("/api/stop")
 async def stop_recording():
-    """Stop listening"""
+    """Stop listening and save WAV recording"""
     global is_processing_active
     is_processing_active = False
     audio_mgr.stop()
+    wav_path = recorder_mgr.stop_recording()
     await broadcast({"type": "state_change", "is_recording": False, "is_paused": False})
-    return {"status": "stopped"}
+    return {"status": "stopped", "wav_file": wav_path}
+
+@app.post("/api/bookmark/last")
+async def bookmark_last():
+    """Bookmark the last translated sentence"""
+    entry = logger_mgr.bookmark_last_entry()
+    if entry:
+        await broadcast({"type": "bookmark_update", "entry": entry})
+        return {"status": "success", "entry": entry}
+    return {"status": "none"}
+
+@app.post("/api/bookmark/{entry_id}")
+async def toggle_bookmark(entry_id: int):
+    """Toggle bookmark on a specific sentence"""
+    is_bookmarked = logger_mgr.toggle_bookmark(entry_id)
+    await broadcast({"type": "bookmark_toggle", "id": entry_id, "is_bookmark": is_bookmarked})
+    return {"status": "success", "id": entry_id, "is_bookmark": is_bookmarked}
+
+@app.get("/api/subjects")
+def get_subjects():
+    """List all subjects/courses"""
+    return {"subjects": subject_mgr.get_all_subjects()}
+
+@app.post("/api/subjects")
+def add_subject(payload: dict = Body(...)):
+    """Create or update a subject"""
+    name = payload.get("name", "")
+    glossary = payload.get("glossary", "")
+    color = payload.get("color", "#06b6d4")
+    sub = subject_mgr.add_subject(name, glossary, color)
+    return {"status": "success", "subject": sub}
+
+@app.get("/api/lectures")
+def get_lectures():
+    """List all past recorded lectures grouped by subject"""
+    lectures = subject_mgr.list_all_lectures()
+    return {"lectures": lectures}
+
+@app.get("/api/audio/{subject}/{filename}")
+def get_audio_file(subject: str, filename: str):
+    """Stream WAV audio file for web audio player"""
+    filepath = os.path.join(RECORDINGS_DIR, subject, filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    return FileResponse(filepath, media_type="audio/wav")
+
+@app.get("/api/download_md/{subject}/{filename}")
+def download_md(subject: str, filename: str):
+    """Download Markdown transcript"""
+    filepath = os.path.join(TRANSCRIPTS_DIR, subject, filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Markdown file not found")
+    return FileResponse(filepath, filename=filename)
 
 @app.post("/api/model")
 def change_model(payload: dict = Body(...)):
-    """Change Whisper model size (tiny, base, small, medium)"""
-    model_size = payload.get("model_size", "base")
+    """Change Whisper model size (tiny, base, small, turbo)"""
+    model_size = payload.get("model_size", "small")
     success = engine.load_model(model_size)
     return {"status": "success" if success else "failed", "current_model": engine.model_size}
 
@@ -188,8 +255,9 @@ def set_prompt(payload: dict = Body(...)):
 def new_session(payload: dict = Body(default={})):
     """Start a new clean lecture session"""
     title = payload.get("title", "")
-    logger_mgr.start_new_session(title)
-    return {"status": "success", "session_id": logger_mgr.session_id, "title": logger_mgr.lecture_title}
+    subject = payload.get("subject", "General")
+    logger_mgr.start_new_session(title=title, subject_name=subject)
+    return {"status": "success", "session_id": logger_mgr.session_id, "title": logger_mgr.lecture_title, "subject": logger_mgr.subject_name}
 
 @app.get("/api/session/history")
 def get_session_history():
@@ -197,6 +265,7 @@ def get_session_history():
     return {
         "session_id": logger_mgr.session_id,
         "title": logger_mgr.lecture_title,
+        "subject": logger_mgr.subject_name,
         "entries": logger_mgr.get_history()
     }
 
@@ -209,28 +278,8 @@ def export_markdown():
         "status": "success",
         "filepath": filepath,
         "filename": filename,
-        "download_url": f"/api/download/{filename}"
+        "download_url": f"/api/download_md/{logger_mgr.subject_name}/{filename}"
     }
-
-@app.post("/api/session/export/srt")
-def export_srt():
-    """Export current session to SRT"""
-    filepath = logger_mgr.export_srt()
-    filename = os.path.basename(filepath)
-    return {
-        "status": "success",
-        "filepath": filepath,
-        "filename": filename,
-        "download_url": f"/api/download/{filename}"
-    }
-
-@app.get("/api/download/{filename}")
-def download_file(filename: str):
-    """Download exported transcript file"""
-    filepath = os.path.join(TRANSCRIPTS_DIR, filename)
-    if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(filepath, filename=filename)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -238,20 +287,20 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     active_websockets.add(websocket)
     
-    # Send initial state & existing history
     try:
         await websocket.send_text(json.dumps({
             "type": "init",
             "is_recording": audio_mgr.is_recording,
+            "is_paused": audio_mgr.is_paused,
             "model_size": engine.model_size,
             "initial_prompt": engine.initial_prompt,
             "lecture_title": logger_mgr.lecture_title,
+            "subject": logger_mgr.subject_name,
             "history": logger_mgr.get_history()
         }))
         
         while True:
             data = await websocket.receive_text()
-            # Handle client-side commands if any
             try:
                 msg = json.loads(data)
                 if msg.get("action") == "ping":

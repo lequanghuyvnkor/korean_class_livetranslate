@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Korean Live Lecture Translator | 실시간 강의 번역</title>
+    <title>Korean Live Lecture Translator & Study Hub | 실시간 강의 번역</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
@@ -16,12 +16,22 @@
     <header class="app-header">
         <div class="header-left">
             <div class="logo-badge">
-                <i class="fa-solid fa-language"></i>
+                <i class="fa-solid fa-graduation-cap"></i>
             </div>
             <div class="logo-text">
-                <h1>Korean Live <span>Translator</span></h1>
+                <h1>Korean Study <span>Hub</span></h1>
                 <p class="subtitle">실시간 강의 통번역 • Offline Faster-Whisper AI</p>
             </div>
+
+            <!-- Tab Navigation Switcher -->
+            <nav class="nav-tabs">
+                <button class="nav-tab active" id="tabLiveBtn">
+                    <i class="fa-solid fa-tower-broadcast"></i> Live Stream
+                </button>
+                <button class="nav-tab" id="tabLibraryBtn">
+                    <i class="fa-solid fa-book-bookmark"></i> Thư Viện Môn Học (<span id="libCountBadge">0</span>)
+                </button>
+            </nav>
         </div>
 
         <div class="header-center">
@@ -45,9 +55,13 @@
         </div>
 
         <div class="header-right">
+            <!-- Quick Bookmark Hotkey Hint -->
+            <button class="btn btn-warning btn-sm" id="quickBookmarkBtn" title="Đánh dấu câu vừa nói là điểm quan trọng/sẽ thi (Phím tắt: B hoặc Space)">
+                <i class="fa-solid fa-star"></i> ⭐ Đánh Dấu Thi (B)
+            </button>
             <!-- HUD Overlay Popout Toggle -->
             <button class="btn btn-hud" id="hudToggleBtn" title="Chế độ Overlay ghim nổi trên Slide bài giảng">
-                <i class="fa-solid fa-window-restore"></i> HUD Overlay
+                <i class="fa-solid fa-window-restore"></i> HUD
             </button>
             <!-- Pause / Resume Button -->
             <button class="btn btn-secondary" id="pauseResumeBtn" style="display: none;" title="Tạm dừng / Tiếp tục nghe">
@@ -60,21 +74,29 @@
         </div>
     </header>
 
-    <!-- Main Container -->
-    <main class="main-layout" id="mainLayout">
+    <!-- TAB 1: LIVE STREAM VIEW -->
+    <main class="main-layout" id="liveViewSection">
         
-        <!-- Left Sidebar: Controls & Settings -->
+        <!-- Left Sidebar: Controls & Subjects -->
         <aside class="sidebar-panel">
             
-            <!-- Lecture Session Card -->
+            <!-- Subject & Session Manager Card -->
             <div class="glass-card">
                 <div class="card-header">
-                    <h3><i class="fa-solid fa-graduation-cap"></i> Lecture Session</h3>
-                    <span class="badge" id="sessionStatusBadge">Ready</span>
+                    <h3><i class="fa-solid fa-folder-open"></i> Quản Lý Môn Học</h3>
+                    <button class="btn-icon" id="openAddSubjectModalBtn" title="Thêm môn học mới">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
                 </div>
                 <div class="form-group">
-                    <label for="lectureTitle">Tên Môn / Bài Giảng:</label>
-                    <input type="text" id="lectureTitle" class="form-control" placeholder="VD: Computer Networks - Week 3" value="University_Lecture">
+                    <label for="subjectSelect">Chọn Môn Đang Học:</label>
+                    <select id="subjectSelect" class="form-control font-bold">
+                        <!-- Loaded dynamically -->
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="lectureTitle">Tên Buổi Học / Chủ Đề:</label>
+                    <input type="text" id="lectureTitle" class="form-control" placeholder="VD: Buoi_3_Tien_Su_Han_Quoc" value="Bai_Giang_1">
                 </div>
                 <div class="session-meta">
                     <div class="meta-item">
@@ -82,25 +104,29 @@
                         <span class="val" id="sessionTimer">00:00:00</span>
                     </div>
                     <div class="meta-item">
-                        <span class="label">Số câu đã thu:</span>
+                        <span class="label">Số câu:</span>
                         <span class="val" id="sentenceCount">0</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="label">Điểm thi:</span>
+                        <span class="val text-gold" id="bookmarkCount">0 ⭐</span>
                     </div>
                 </div>
                 <button class="btn btn-secondary btn-sm full-width mt-2" id="newSessionBtn">
-                    <i class="fa-solid fa-rotate-left"></i> Tạo Phiên Học Mới
+                    <i class="fa-solid fa-rotate-left"></i> Bắt Đầu Buổi Học Mới
                 </button>
             </div>
 
-            <!-- Audio Input Device Selector -->
+            <!-- Audio Input Device Selector with 1-Click Modes -->
             <div class="glass-card">
                 <div class="card-header">
-                    <h3><i class="fa-solid fa-sliders"></i> Microphone Setup</h3>
+                    <h3><i class="fa-solid fa-sliders"></i> Nguồn Thu Âm</h3>
                     <button class="btn-icon" id="refreshDevicesBtn" title="Làm mới danh sách mic">
                         <i class="fa-solid fa-arrows-rotate"></i>
                     </button>
                 </div>
 
-                <!-- Quick Preset Mode Buttons -->
+                <!-- 1-Click Preset Modes -->
                 <div class="preset-modes mb-2" style="display: flex; gap: 0.4rem;">
                     <button class="btn btn-sm btn-outline active" id="btnModeMic" style="flex: 1; font-size: 0.75rem; padding: 0.4rem 0.2rem;" title="Thu giọng giáo sư trên bục giảng">
                         🎙️ Giảng Đường (Mic)
@@ -111,13 +137,13 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="deviceSelect">Chọn Thiết Bị Thu Âm:</label>
+                    <label for="deviceSelect">Thiết bị thu:</label>
                     <select id="deviceSelect" class="form-control">
                         <option value="">Default Microphone</option>
                     </select>
                 </div>
                 
-                <button class="btn btn-secondary btn-sm full-width mt-1" id="openSoundSettingsBtn" style="font-size: 0.75rem;" title="Mở Control Panel để bật Stereo Mix">
+                <button class="btn btn-secondary btn-sm full-width mt-1" id="openSoundSettingsBtn" style="font-size: 0.72rem;">
                     <i class="fa-solid fa-gear"></i> Mở Cài Đặt Windows Bật Stereo Mix
                 </button>
             </div>
@@ -125,22 +151,22 @@
             <!-- AI Engine & Vocabulary Booster -->
             <div class="glass-card">
                 <div class="card-header">
-                    <h3><i class="fa-solid fa-microchip"></i> AI Engine Settings</h3>
+                    <h3><i class="fa-solid fa-microchip"></i> Từ Điển Môn Học</h3>
                 </div>
                 <div class="form-group">
                     <label for="modelSelect">Whisper Model:</label>
                     <select id="modelSelect" class="form-control">
-                        <option value="small" selected>Small (Khuyên Dùng: Chuẩn tiếng Hàn, không lặp từ)</option>
-                        <option value="turbo">Large-v3 Turbo (Thông minh nhất, chất lượng cao nhất)</option>
-                        <option value="base">Base (Nhẹ máy, cơ bản)</option>
-                        <option value="tiny">Tiny (Siêu nhẹ, latency thấp nhất)</option>
+                        <option value="small" selected>Small (Khuyên Dùng: Chuẩn tiếng Hàn)</option>
+                        <option value="turbo">Large-v3 Turbo (Thông minh nhất)</option>
+                        <option value="base">Base (Cơ bản, nhẹ máy)</option>
+                        <option value="tiny">Tiny (Siêu nhẹ)</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label for="vocabPrompt">Thuật ngữ môn học (Glossary Booster):</label>
-                    <textarea id="vocabPrompt" class="form-control" rows="2" placeholder="Nhập từ khóa môn học cách nhau bởi dấu phẩy, ví dụ: 인공지능, 운영체제, 네트워크, 알고리즘"></textarea>
+                    <textarea id="vocabPrompt" class="form-control" rows="2" placeholder="Từ khóa môn học..."></textarea>
                     <button class="btn btn-secondary btn-sm mt-1" id="savePromptBtn">
-                        <i class="fa-solid fa-check"></i> Áp dụng từ điển
+                        <i class="fa-solid fa-check"></i> Lưu từ điển môn này
                     </button>
                 </div>
             </div>
@@ -148,17 +174,14 @@
             <!-- Export Actions -->
             <div class="glass-card">
                 <div class="card-header">
-                    <h3><i class="fa-solid fa-file-export"></i> Xuất Tài Liệu Học</h3>
+                    <h3><i class="fa-solid fa-file-export"></i> Xuất Tài Liệu</h3>
                 </div>
                 <div class="export-buttons">
+                    <button class="btn btn-accent full-width mb-2" id="copyAiPromptBtn">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Copy Prompt Ôn Thi Cho AI
+                    </button>
                     <button class="btn btn-outline full-width mb-2" id="exportMdBtn">
                         <i class="fa-brands fa-markdown"></i> Xuất Markdown (.md)
-                    </button>
-                    <button class="btn btn-outline full-width mb-2" id="exportSrtBtn">
-                        <i class="fa-solid fa-closed-captioning"></i> Xuất Phụ đề (.srt)
-                    </button>
-                    <button class="btn btn-accent full-width" id="copyAiPromptBtn">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i> Copy Prompt Tóm Tắt AI
                     </button>
                 </div>
             </div>
@@ -176,22 +199,29 @@
                         <span class="status-text" id="liveStatusText">Ready to listen</span>
                     </div>
                     <div class="font-controls">
+                        <button class="btn-icon text-gold" id="heroBookmarkBtn" title="Đánh dấu câu này"><i class="fa-solid fa-star"></i></button>
                         <button class="btn-icon" id="fontDecBtn" title="Giảm cỡ chữ"><i class="fa-solid fa-font"></i>-</button>
                         <button class="btn-icon" id="fontIncBtn" title="Tăng cỡ chữ"><i class="fa-solid fa-font"></i>+</button>
                         <button class="btn-icon" id="clearViewBtn" title="Xóa màn hình"><i class="fa-solid fa-eraser"></i></button>
                     </div>
                 </div>
 
+                <!-- 3-Language Live Translation Display -->
                 <div class="live-translation-display" id="liveDisplay">
                     <!-- Korean Original -->
                     <div class="korean-live-box">
-                        <div class="lang-tag"><span class="flag">🇰🇷</span> KOREAN (ORIGINAL)</div>
+                        <div class="lang-tag"><span class="flag">🇰🇷</span> TIẾNG HÀN GỐC (KOREAN)</div>
                         <p class="korean-text" id="liveKoreanText">교수님의 한국어 강의 음성을 기다리는 중입니다...</p>
+                    </div>
+                    <!-- Vietnamese Translation -->
+                    <div class="vietnamese-live-box">
+                        <div class="lang-tag text-emerald"><span class="flag">🇻🇳</span> TIẾNG VIỆT (VIETNAMESE)</div>
+                        <p class="vietnamese-text" id="liveVietnameseText">Đang chờ giọng giảng viên tiếng Hàn để dịch sang tiếng Việt...</p>
                     </div>
                     <!-- English Translation -->
                     <div class="english-live-box">
-                        <div class="lang-tag"><span class="flag">🇬🇧</span> ENGLISH TRANSLATION</div>
-                        <p class="english-text" id="liveEnglishText">Waiting for Korean lecture speech to translate...</p>
+                        <div class="lang-tag text-cyan"><span class="flag">🇬🇧</span> TIẾNG ANH (ENGLISH)</div>
+                        <p class="english-text" id="liveEnglishText">Waiting for Korean speech to translate...</p>
                     </div>
                 </div>
             </div>
@@ -199,7 +229,7 @@
             <!-- Full Dual-Transcript History Table -->
             <div class="history-card">
                 <div class="history-header">
-                    <h2><i class="fa-solid fa-list-check"></i> Transcript Lịch Sử Bài Giảng</h2>
+                    <h2><i class="fa-solid fa-list-check"></i> Transcript Bài Giảng</h2>
                     <div class="history-actions">
                         <div class="search-box">
                             <i class="fa-solid fa-magnifying-glass"></i>
@@ -224,7 +254,42 @@
 
     </main>
 
-    <!-- Floating HUD Overlay Container (Activated in Overlay Mode) -->
+    <!-- TAB 2: SUBJECT ARCHIVE & AUDIO PLAYER VIEW -->
+    <main class="library-layout" id="libraryViewSection" style="display: none;">
+        <div class="library-container">
+            <div class="library-header">
+                <div>
+                    <h2><i class="fa-solid fa-book-open-reader"></i> Thư Viện Bài Giảng & Ghi Âm Từng Môn Học</h2>
+                    <p class="subtitle">Nghe lại file ghi âm WAV gốc, xem lại transcript và ôn thi theo từng môn</p>
+                </div>
+                <div class="library-filter">
+                    <select id="libSubjectFilter" class="form-control" style="width: 250px;">
+                        <option value="">Tất Cả Môn Học</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Audio Player Widget -->
+            <div class="audio-player-card" id="globalAudioPlayer" style="display: none;">
+                <div class="player-info">
+                    <i class="fa-solid fa-music text-accent"></i>
+                    <div>
+                        <h4 id="playerLectureTitle">Đang phát bài giảng...</h4>
+                        <span class="player-sub" id="playerSubjectTitle">Môn học</span>
+                    </div>
+                </div>
+                <audio id="mainAudioElement" controls style="width: 100%; max-width: 500px;"></audio>
+                <button class="btn-icon" id="closePlayerBtn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Lecture Cards Grid -->
+            <div class="lectures-grid" id="lecturesGrid">
+                <!-- Loaded dynamically -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Floating HUD Overlay Container -->
     <div class="hud-overlay-container" id="hudOverlayContainer" style="display: none;">
         <div class="hud-bar">
             <div class="hud-drag-handle">
@@ -232,14 +297,40 @@
             </div>
             <div class="hud-controls">
                 <input type="range" id="hudOpacitySlider" min="0.3" max="1" step="0.05" value="0.85" title="Độ mờ kính">
+                <button class="btn-hud-tool text-gold" id="hudBookmarkBtn" title="Đánh dấu điểm thi"><i class="fa-solid fa-star"></i></button>
                 <button class="btn-hud-tool" id="hudFontDec"><i class="fa-solid fa-minus"></i></button>
                 <button class="btn-hud-tool" id="hudFontInc"><i class="fa-solid fa-plus"></i></button>
                 <button class="btn-hud-tool" id="hudCloseBtn"><i class="fa-solid fa-xmark"></i></button>
             </div>
         </div>
         <div class="hud-content" id="hudContent">
+            <div class="hud-vietnamese" id="hudVietnameseText">Đang chờ giọng giảng viên tiếng Hàn...</div>
             <div class="hud-english" id="hudEnglishText">Waiting for Korean speech...</div>
             <div class="hud-korean" id="hudKoreanText">한국어 강의 대기 중...</div>
+        </div>
+    </div>
+
+    <!-- Modal: Add New Subject -->
+    <div class="modal-backdrop" id="addSubjectModal" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-folder-plus"></i> Thêm Môn Học Mới</h3>
+                <button class="btn-icon" id="closeAddSubjectModalBtn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Tên Môn Học (Tiếng Việt / Hàn):</label>
+                    <input type="text" id="newSubjectName" class="form-control" placeholder="VD: Triết Học (철학) hoặc Giải Phẫu Học (해부학)">
+                </div>
+                <div class="form-group">
+                    <label>Từ Điển Thuật Ngữ Môn Học (Glossary Booster):</label>
+                    <textarea id="newSubjectGlossary" class="form-control" rows="3" placeholder="Nhập các từ chuyên ngành của môn này, cách nhau bằng dấu phẩy..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelSubjectBtn">Hủy</button>
+                <button class="btn btn-primary" id="saveNewSubjectBtn"><i class="fa-solid fa-check"></i> Lưu Môn Học</button>
+            </div>
         </div>
     </div>
 

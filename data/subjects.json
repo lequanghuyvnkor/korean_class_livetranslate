@@ -1,0 +1,26 @@
+[
+  {
+    "id": "korean_history",
+    "name": "Lịch Sử Hàn Quốc (한국사)",
+    "glossary": "한국사, 구석기, 신석기, 뗀석기, 슴베찌르개, 빗살무늬토기, 단군왕검, 고조선, 삼국시대, 고구려, 백제, 신라",
+    "color": "#f59e0b"
+  },
+  {
+    "id": "computer_science",
+    "name": "Khoa Học Máy Tính (컴퓨터공학)",
+    "glossary": "컴퓨터공학, 운영체제, 알고리즘, 자료구조, 데이터베이스, 네트워크, 인공지능, 프로세스, 메모리",
+    "color": "#3b82f6"
+  },
+  {
+    "id": "business_economics",
+    "name": "Kinh Tế & Quản Trị (경영학 / 경제학)",
+    "glossary": "경영학, 경제학, 재무제표, 마케팅, 회계, 손익분기점, 공급망, 거시경제, 미시경제",
+    "color": "#10b981"
+  },
+  {
+    "id": "general_lecture",
+    "name": "Môn Học Chung (일반 강의)",
+    "glossary": "한국어 대학교 강의, 학술 용어, 전공 수업, 과제, 중간고사, 기말고사",
+    "color": "#8b5cf6"
+  }
+]

@@ -185,17 +185,20 @@ class TranslatorEngine:
             if len(korean_text) < 2 and len(english_text) < 2:
                 return None
 
-            if not english_text and korean_text:
-                english_text = f"({korean_text})"
-            if not korean_text and english_text:
-                korean_text = f"({english_text})"
+            # Step 3: Fast Translation to Vietnamese
+            from .vietnamese_translator import VietnameseTranslator
+            vietnamese_text = VietnameseTranslator.translate_to_vietnamese(english_text, source_lang="en")
+            if not vietnamese_text and korean_text:
+                vietnamese_text = VietnameseTranslator.translate_to_vietnamese(korean_text, source_lang="ko")
 
             return {
                 "korean": korean_text,
                 "english": english_text,
+                "vietnamese": vietnamese_text if vietnamese_text else english_text,
                 "duration": round(len(audio_data) / 16000.0, 2),
                 "inference_time": elapsed,
-                "timestamp": time.strftime("%H:%M:%S")
+                "timestamp": time.strftime("%H:%M:%S"),
+                "is_bookmark": False
             }
 
         except Exception as e:

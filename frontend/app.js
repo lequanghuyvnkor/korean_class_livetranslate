@@ -5,15 +5,25 @@ let isPaused = false;
 let sessionStartTime = null;
 let sessionTimerInterval = null;
 let autoScroll = true;
-let currentFontSize = 1.35; // rem
-let hudFontSize = 1.5; // rem
+let currentFontSize = 1.25; // rem
+let hudFontSize = 1.4; // rem
 let allEntries = [];
+let subjectsList = [];
+let currentSubject = "General";
 
 // DOM Elements
+const tabLiveBtn = document.getElementById("tabLiveBtn");
+const tabLibraryBtn = document.getElementById("tabLibraryBtn");
+const liveViewSection = document.getElementById("liveViewSection");
+const libraryViewSection = document.getElementById("libraryViewSection");
+const libCountBadge = document.getElementById("libCountBadge");
+
 const recordBtn = document.getElementById("mainRecordBtn");
 const recordBtnText = document.getElementById("recordBtnText");
 const pauseResumeBtn = document.getElementById("pauseResumeBtn");
-const pauseBtnText = document.getElementById("pauseBtnText");
+const quickBookmarkBtn = document.getElementById("quickBookmarkBtn");
+const heroBookmarkBtn = document.getElementById("heroBookmarkBtn");
+const hudBookmarkBtn = document.getElementById("hudBookmarkBtn");
 
 const micStatusIcon = document.getElementById("micStatusIcon");
 const audioMonitor = document.getElementById("audioMonitor");
@@ -23,24 +33,31 @@ const waveformBars = document.querySelectorAll(".waveform-bars .bar");
 const livePulseDot = document.getElementById("livePulseDot");
 const liveStatusText = document.getElementById("liveStatusText");
 const liveKoreanText = document.getElementById("liveKoreanText");
+const liveVietnameseText = document.getElementById("liveVietnameseText");
 const liveEnglishText = document.getElementById("liveEnglishText");
 
 const transcriptFeed = document.getElementById("transcriptFeed");
 const emptyState = document.getElementById("emptyState");
 const sentenceCountEl = document.getElementById("sentenceCount");
+const bookmarkCountEl = document.getElementById("bookmarkCount");
 const sessionTimerEl = document.getElementById("sessionTimer");
-const sessionStatusBadge = document.getElementById("sessionStatusBadge");
+
+const subjectSelect = document.getElementById("subjectSelect");
+const lectureTitleInput = document.getElementById("lectureTitle");
+const newSessionBtn = document.getElementById("newSessionBtn");
+const openAddSubjectModalBtn = document.getElementById("openAddSubjectModalBtn");
 
 const deviceSelect = document.getElementById("deviceSelect");
 const refreshDevicesBtn = document.getElementById("refreshDevicesBtn");
+const btnModeMic = document.getElementById("btnModeMic");
+const btnModeOnline = document.getElementById("btnModeOnline");
+const openSoundSettingsBtn = document.getElementById("openSoundSettingsBtn");
+
 const modelSelect = document.getElementById("modelSelect");
 const vocabPrompt = document.getElementById("vocabPrompt");
 const savePromptBtn = document.getElementById("savePromptBtn");
-const lectureTitleInput = document.getElementById("lectureTitle");
-const newSessionBtn = document.getElementById("newSessionBtn");
 
 const exportMdBtn = document.getElementById("exportMdBtn");
-const exportSrtBtn = document.getElementById("exportSrtBtn");
 const copyAiPromptBtn = document.getElementById("copyAiPromptBtn");
 const searchInput = document.getElementById("searchTranscript");
 const autoScrollBtn = document.getElementById("autoScrollToggle");
@@ -51,6 +68,7 @@ const clearViewBtn = document.getElementById("clearViewBtn");
 
 const hudToggleBtn = document.getElementById("hudToggleBtn");
 const hudOverlayContainer = document.getElementById("hudOverlayContainer");
+const hudVietnameseText = document.getElementById("hudVietnameseText");
 const hudEnglishText = document.getElementById("hudEnglishText");
 const hudKoreanText = document.getElementById("hudKoreanText");
 const hudCloseBtn = document.getElementById("hudCloseBtn");
@@ -58,11 +76,31 @@ const hudOpacitySlider = document.getElementById("hudOpacitySlider");
 const hudFontInc = document.getElementById("hudFontInc");
 const hudFontDec = document.getElementById("hudFontDec");
 
+// Library elements
+const libSubjectFilter = document.getElementById("libSubjectFilter");
+const lecturesGrid = document.getElementById("lecturesGrid");
+const globalAudioPlayer = document.getElementById("globalAudioPlayer");
+const mainAudioElement = document.getElementById("mainAudioElement");
+const playerLectureTitle = document.getElementById("playerLectureTitle");
+const playerSubjectTitle = document.getElementById("playerSubjectTitle");
+const closePlayerBtn = document.getElementById("closePlayerBtn");
+
+// Modal elements
+const addSubjectModal = document.getElementById("addSubjectModal");
+const closeAddSubjectModalBtn = document.getElementById("closeAddSubjectModalBtn");
+const cancelSubjectBtn = document.getElementById("cancelSubjectBtn");
+const saveNewSubjectBtn = document.getElementById("saveNewSubjectBtn");
+const newSubjectName = document.getElementById("newSubjectName");
+const newSubjectGlossary = document.getElementById("newSubjectGlossary");
+
 // Initialize
 document.addEventListener("DOMContentLoaded", () => {
     initWebSocket();
+    loadSubjects();
     loadDevices();
+    loadLecturesArchive();
     setupEventListeners();
+    setupHotkeys();
 });
 
 // WebSocket Connection
@@ -87,7 +125,6 @@ function initWebSocket() {
     };
     
     ws.onclose = () => {
-        console.log("WebSocket disconnected. Retrying in 2s...");
         setTimeout(initWebSocket, 2000);
     };
 }
@@ -95,10 +132,14 @@ function initWebSocket() {
 function handleWsMessage(data) {
     switch (data.type) {
         case "init":
-            updateRecordingState(data.is_recording, false);
+            updateRecordingState(data.is_recording, data.is_paused || false);
             if (data.model_size) modelSelect.value = data.model_size;
             if (data.initial_prompt) vocabPrompt.value = data.initial_prompt;
             if (data.lecture_title) lectureTitleInput.value = data.lecture_title;
+            if (data.subject) {
+                currentSubject = data.subject;
+                subjectSelect.value = data.subject;
+            }
             if (data.history && data.history.length > 0) {
                 allEntries = data.history;
                 renderAllEntries();
@@ -112,10 +153,10 @@ function handleWsMessage(data) {
         case "status":
             if (!isPaused) {
                 if (data.status === "translating") {
-                    liveStatusText.textContent = "AI Translating...";
+                    liveStatusText.textContent = "AI Translating (Hàn → Việt/Anh)...";
                     livePulseDot.className = "pulse-dot active";
                 } else if (data.status === "listening") {
-                    liveStatusText.textContent = "Listening to lecture...";
+                    liveStatusText.textContent = `Đang nghe bài giảng: ${currentSubject}...`;
                     livePulseDot.className = "pulse-dot active";
                 }
             }
@@ -127,6 +168,15 @@ function handleWsMessage(data) {
             
         case "state_change":
             updateRecordingState(data.is_recording, data.is_paused || false);
+            if (!data.is_recording) {
+                // Refresh library when stopped
+                loadLecturesArchive();
+            }
+            break;
+            
+        case "bookmark_update":
+        case "bookmark_toggle":
+            updateEntryBookmark(data.entry ? data.entry.id : data.id, data.entry ? data.entry.is_bookmark : data.is_bookmark);
             break;
     }
 }
@@ -153,16 +203,18 @@ function updateVolumeVisualizer(level, active) {
     });
 }
 
-// Translations Handling
+// Translation Handling
 function appendTranslationEntry(entry) {
     allEntries.push(entry);
     
     // Update live hero banner
     liveKoreanText.textContent = entry.korean;
+    liveVietnameseText.textContent = entry.vietnamese || entry.english;
     liveEnglishText.textContent = entry.english;
     
     // Update HUD overlay
     hudKoreanText.textContent = entry.korean;
+    hudVietnameseText.textContent = entry.vietnamese || entry.english;
     hudEnglishText.textContent = entry.english;
     
     // Hide empty state
@@ -172,8 +224,7 @@ function appendTranslationEntry(entry) {
     const itemEl = createEntryElement(entry);
     transcriptFeed.appendChild(itemEl);
     
-    // Update count
-    sentenceCountEl.textContent = allEntries.length;
+    updateCounts();
     
     if (autoScroll) {
         transcriptFeed.scrollTop = transcriptFeed.scrollHeight;
@@ -182,14 +233,21 @@ function appendTranslationEntry(entry) {
 
 function createEntryElement(entry) {
     const div = document.createElement("div");
-    div.className = "transcript-item";
+    div.className = `transcript-item ${entry.is_bookmark ? 'bookmarked' : ''}`;
     div.id = `entry-${entry.id}`;
+    
+    const starClass = entry.is_bookmark ? 'btn-star active' : 'btn-star';
+    
     div.innerHTML = `
         <div class="t-time">${entry.timestamp}</div>
         <div class="t-korean">${escapeHtml(entry.korean)}</div>
+        <div class="t-vietnamese">${escapeHtml(entry.vietnamese || entry.english)}</div>
         <div class="t-english">${escapeHtml(entry.english)}</div>
         <div class="t-actions">
-            <button class="btn-icon" title="Copy câu này" onclick="copyText('${escapeJs(entry.english)}')">
+            <button class="btn-icon ${starClass}" title="Đánh dấu điểm thi" onclick="toggleSentenceBookmark(${entry.id})">
+                <i class="fa-solid fa-star"></i>
+            </button>
+            <button class="btn-icon" title="Copy câu này" onclick="copyText('${escapeJs(entry.vietnamese || entry.english)}')">
                 <i class="fa-solid fa-copy"></i>
             </button>
         </div>
@@ -208,75 +266,277 @@ function renderAllEntries() {
         });
         const last = allEntries[allEntries.length - 1];
         liveKoreanText.textContent = last.korean;
+        liveVietnameseText.textContent = last.vietnamese || last.english;
         liveEnglishText.textContent = last.english;
         hudKoreanText.textContent = last.korean;
+        hudVietnameseText.textContent = last.vietnamese || last.english;
         hudEnglishText.textContent = last.english;
     }
+    updateCounts();
+}
+
+function updateCounts() {
     sentenceCountEl.textContent = allEntries.length;
+    const bCount = allEntries.filter(e => e.is_bookmark).length;
+    bookmarkCountEl.textContent = `${bCount} ⭐`;
+}
+
+// Bookmarking
+async function bookmarkLastSentence() {
+    if (allEntries.length === 0) return;
+    try {
+        const res = await fetch("/api/bookmark/last", { method: "POST" });
+        const data = await res.json();
+        if (data.status === "success") {
+            updateEntryBookmark(data.entry.id, true);
+            showToast("⭐ Đã đánh dấu điểm thi cử quan trọng!");
+        }
+    } catch (e) {}
+}
+
+async function toggleSentenceBookmark(id) {
+    try {
+        const res = await fetch(`/api/bookmark/${id}`, { method: "POST" });
+        const data = await res.json();
+        if (data.status === "success") {
+            updateEntryBookmark(id, data.is_bookmark);
+        }
+    } catch (e) {}
+}
+
+function updateEntryBookmark(id, isBookmarked) {
+    const item = allEntries.find(e => e.id === id);
+    if (item) item.is_bookmark = isBookmarked;
+    
+    const el = document.getElementById(`entry-${id}`);
+    if (el) {
+        if (isBookmarked) el.classList.add("bookmarked");
+        else el.classList.remove("bookmarked");
+        
+        const starBtn = el.querySelector(".btn-star");
+        if (starBtn) {
+            starBtn.className = isBookmarked ? "btn-icon btn-star active" : "btn-icon btn-star";
+        }
+    }
+    updateCounts();
+}
+
+// Subjects Management
+async function loadSubjects() {
+    try {
+        const res = await fetch("/api/subjects");
+        const data = await res.json();
+        subjectsList = data.subjects || [];
+        
+        subjectSelect.innerHTML = "";
+        libSubjectFilter.innerHTML = '<option value="">Tất Cả Môn Học</option>';
+        
+        subjectsList.forEach(s => {
+            const opt = document.createElement("option");
+            opt.value = s.name;
+            opt.textContent = s.name;
+            subjectSelect.appendChild(opt);
+            
+            const optFilter = document.createElement("option");
+            optFilter.value = s.name;
+            optFilter.textContent = s.name;
+            libSubjectFilter.appendChild(optFilter);
+        });
+        
+        // Populate glossary for current selection
+        updateGlossaryFromSelection();
+    } catch (e) {
+        console.error("Error loading subjects:", e);
+    }
+}
+
+function updateGlossaryFromSelection() {
+    const selectedName = subjectSelect.value;
+    currentSubject = selectedName;
+    const sub = subjectsList.find(s => s.name === selectedName);
+    if (sub && sub.glossary) {
+        vocabPrompt.value = sub.glossary;
+    }
+}
+
+// Lectures Archive (Library View)
+async function loadLecturesArchive() {
+    try {
+        const res = await fetch("/api/lectures");
+        const data = await res.json();
+        const lectures = data.lectures || [];
+        
+        libCountBadge.textContent = lectures.length;
+        renderLecturesGrid(lectures);
+    } catch (e) {
+        console.error("Error loading archive:", e);
+    }
+}
+
+function renderLecturesGrid(lectures) {
+    lecturesGrid.innerHTML = "";
+    const filterSubject = libSubjectFilter.value;
+    
+    const filtered = filterSubject 
+        ? lectures.filter(l => l.subject === filterSubject || l.subject.includes(filterSubject))
+        : lectures;
+        
+    if (filtered.length === 0) {
+        lecturesGrid.innerHTML = `
+            <div class="empty-state" style="grid-column: 1 / -1;">
+                <i class="fa-solid fa-folder-open"></i>
+                <p>Chưa có file ghi âm nào cho môn học này. Hãy bắt đầu thu âm bài giảng đầu tiên!</p>
+            </div>
+        `;
+        return;
+    }
+    
+    filtered.forEach(lec => {
+        const card = document.createElement("div");
+        card.className = "lecture-card";
+        
+        const audioBtn = lec.has_audio 
+            ? `<button class="btn btn-sm btn-accent" onclick="playAudio('${lec.audio_url}', '${escapeJs(lec.title)}', '${escapeJs(lec.subject)}')"><i class="fa-solid fa-play"></i> Nghe Ghi Âm (.wav)</button>`
+            : `<span class="badge">Không có audio</span>`;
+            
+        card.innerHTML = `
+            <div class="lecture-card-header">
+                <div>
+                    <h3 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 0.2rem;">${escapeHtml(lec.title)}</h3>
+                    <span style="font-size: 0.75rem; color: var(--text-dim);"><i class="fa-regular fa-clock"></i> ${lec.date}</span>
+                </div>
+                <span class="lecture-subject-tag">${escapeHtml(lec.subject)}</span>
+            </div>
+            <div class="lecture-stats">
+                <div><strong>⏱️ ${lec.duration}</strong><br><span style="color: var(--text-dim);">Thời lượng</span></div>
+                <div><strong>📝 ${lec.sentence_count}</strong><br><span style="color: var(--text-dim);">Số câu</span></div>
+                <div><strong class="text-gold">⭐ ${lec.bookmark_count}</strong><br><span style="color: var(--text-dim);">Điểm thi</span></div>
+            </div>
+            <div class="lecture-actions">
+                ${audioBtn}
+                <a href="${lec.md_download_url}" target="_blank" class="btn btn-sm btn-outline"><i class="fa-brands fa-markdown"></i> Tải .md</a>
+            </div>
+        `;
+        lecturesGrid.appendChild(card);
+    });
+}
+
+function playAudio(url, title, subject) {
+    globalAudioPlayer.style.display = "flex";
+    playerLectureTitle.textContent = title;
+    playerSubjectTitle.textContent = `Môn: ${subject}`;
+    mainAudioElement.src = url;
+    mainAudioElement.play();
 }
 
 // Event Listeners
 function setupEventListeners() {
+    // Tab Switchers
+    tabLiveBtn.addEventListener("click", () => {
+        tabLiveBtn.classList.add("active");
+        tabLibraryBtn.classList.remove("active");
+        liveViewSection.style.display = "grid";
+        libraryViewSection.style.display = "none";
+    });
+    
+    tabLibraryBtn.addEventListener("click", () => {
+        tabLibraryBtn.classList.add("active");
+        tabLiveBtn.classList.remove("active");
+        liveViewSection.style.display = "none";
+        libraryViewSection.style.display = "block";
+        loadLecturesArchive();
+    });
+    
+    libSubjectFilter.addEventListener("change", () => loadLecturesArchive());
+    closePlayerBtn.addEventListener("click", () => {
+        mainAudioElement.pause();
+        globalAudioPlayer.style.display = "none";
+    });
+    
+    // Subject Selection
+    subjectSelect.addEventListener("change", updateGlossaryFromSelection);
+    
+    // Add Subject Modal
+    openAddSubjectModalBtn.addEventListener("click", () => addSubjectModal.style.display = "flex");
+    closeAddSubjectModalBtn.addEventListener("click", () => addSubjectModal.style.display = "none");
+    cancelSubjectBtn.addEventListener("click", () => addSubjectModal.style.display = "none");
+    
+    saveNewSubjectBtn.addEventListener("click", async () => {
+        const name = newSubjectName.value.trim();
+        const glossary = newSubjectGlossary.value.trim();
+        if (!name) {
+            showToast("Vui lòng nhập tên môn học!");
+            return;
+        }
+        
+        try {
+            await fetch("/api/subjects", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: name, glossary: glossary })
+            });
+            addSubjectModal.style.display = "none";
+            newSubjectName.value = "";
+            newSubjectGlossary.value = "";
+            await loadSubjects();
+            subjectSelect.value = name;
+            updateGlossaryFromSelection();
+            showToast(`Đã thêm môn học: ${name}`);
+        } catch (e) {
+            showToast("Lỗi thêm môn học");
+        }
+    });
+    
     // Record button toggle
     recordBtn.addEventListener("click", toggleRecording);
-    
-    // Pause / Resume button
     pauseResumeBtn.addEventListener("click", togglePauseResume);
+    
+    // Bookmark buttons
+    quickBookmarkBtn.addEventListener("click", bookmarkLastSentence);
+    heroBookmarkBtn.addEventListener("click", bookmarkLastSentence);
+    hudBookmarkBtn.addEventListener("click", bookmarkLastSentence);
     
     // Refresh Devices
     refreshDevicesBtn.addEventListener("click", loadDevices);
     
     // Preset Mode Buttons
-    const btnModeMic = document.getElementById("btnModeMic");
-    const btnModeOnline = document.getElementById("btnModeOnline");
-    const openSoundSettingsBtn = document.getElementById("openSoundSettingsBtn");
+    btnModeMic.addEventListener("click", () => {
+        btnModeMic.classList.add("active");
+        btnModeOnline.classList.remove("active");
+        deviceSelect.value = "";
+        showToast("🎙️ Đã chuyển sang Chế độ Giảng Đường (Thu giọng giáo sư qua Micro)");
+    });
 
-    if (btnModeMic) {
-        btnModeMic.addEventListener("click", () => {
-            btnModeMic.classList.add("active");
-            if (btnModeOnline) btnModeOnline.classList.remove("active");
-            deviceSelect.value = "";
-            showToast("🎙️ Đã chuyển sang Chế độ Giảng Đường (Thu giọng giáo sư qua Micro)");
-        });
-    }
-
-    if (btnModeOnline) {
-        btnModeOnline.addEventListener("click", async () => {
-            btnModeOnline.classList.add("active");
-            if (btnModeMic) btnModeMic.classList.remove("active");
-            
-            // Search dropdown for Stereo Mix option
-            let foundIndex = -1;
-            for (let i = 0; i < deviceSelect.options.length; i++) {
-                const text = deviceSelect.options[i].textContent.toLowerCase();
-                if (text.includes("stereo mix") || text.includes("waveout") || text.includes("system audio") || text.includes("am thanh may tinh")) {
-                    foundIndex = i;
-                    break;
-                }
+    btnModeOnline.addEventListener("click", async () => {
+        btnModeOnline.classList.add("active");
+        btnModeMic.classList.remove("active");
+        
+        let foundIndex = -1;
+        for (let i = 0; i < deviceSelect.options.length; i++) {
+            const text = deviceSelect.options[i].textContent.toLowerCase();
+            if (text.includes("stereo mix") || text.includes("waveout") || text.includes("system audio")) {
+                foundIndex = i;
+                break;
             }
+        }
 
-            if (foundIndex !== -1) {
-                deviceSelect.selectedIndex = foundIndex;
-                showToast("💻 Đã chọn Chế độ Học Online (Bắt âm thanh Youtube/Zoom trong máy)");
-            } else {
-                showToast("⚠️ Stereo Mix chưa được bật. Đã tự động mở Cài đặt Windows để bạn bật trong 10s!");
-                try {
-                    await fetch("/api/open_sound_settings", { method: "POST" });
-                } catch (e) {}
-            }
-        });
-    }
-
-    if (openSoundSettingsBtn) {
-        openSoundSettingsBtn.addEventListener("click", async () => {
+        if (foundIndex !== -1) {
+            deviceSelect.selectedIndex = foundIndex;
+            showToast("💻 Đã chọn Chế độ Học Online (Bắt âm thanh Youtube/Zoom)");
+        } else {
+            showToast("⚠️ Stereo Mix chưa được bật. Đã mở Cài đặt Windows để bạn bật trong 10s!");
             try {
                 await fetch("/api/open_sound_settings", { method: "POST" });
-                showToast("Đã mở Cài đặt Windows! Nhấp chuột phải vào Stereo Mix chọn Enable.");
-            } catch (e) {
-                showToast("Không thể mở tự động. Vui lòng nhấn Windows + R gõ mmsys.cpl");
-            }
-        });
-    }
+            } catch (e) {}
+        }
+    });
+
+    openSoundSettingsBtn.addEventListener("click", async () => {
+        try {
+            await fetch("/api/open_sound_settings", { method: "POST" });
+            showToast("Đã mở Cài đặt Windows! Nhấp chuột phải vào Stereo Mix chọn Enable.");
+        } catch (e) {}
+    });
     
     // Model Select
     modelSelect.addEventListener("change", async () => {
@@ -290,7 +550,7 @@ function setupEventListeners() {
             });
             const data = await res.json();
             if (data.status === "success") {
-                showToast(`Đã chuyển sang model Whisper: ${model}`);
+                showToast(`Đã chuyển sang model: ${model}`);
             }
         } catch (e) {
             showToast("Lỗi chuyển model");
@@ -300,13 +560,21 @@ function setupEventListeners() {
     // Save Prompt
     savePromptBtn.addEventListener("click", async () => {
         const prompt = vocabPrompt.value;
+        const currentSubName = subjectSelect.value;
+        
         try {
             await fetch("/api/prompt", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ prompt: prompt })
             });
-            showToast("Đã lưu từ điển chuyên ngành!");
+            // Also update subject glossary
+            await fetch("/api/subjects", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: currentSubName, glossary: prompt })
+            });
+            showToast("Đã lưu từ điển môn học!");
         } catch (e) {
             showToast("Lỗi lưu từ điển");
         }
@@ -314,17 +582,18 @@ function setupEventListeners() {
     
     // New Session
     newSessionBtn.addEventListener("click", async () => {
-        if (confirm("Bắt đầu một phiên ghi bài giảng mới?")) {
+        if (confirm("Bắt đầu buổi học mới?")) {
             const title = lectureTitleInput.value;
+            const subject = subjectSelect.value;
             await fetch("/api/session/new", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ title: title })
+                body: JSON.stringify({ title: title, subject: subject })
             });
             allEntries = [];
             renderAllEntries();
             resetTimer();
-            showToast("Đã tạo phiên học mới!");
+            showToast("Đã tạo buổi học mới!");
         }
     });
     
@@ -342,24 +611,10 @@ function setupEventListeners() {
         }
     });
     
-    // Export SRT
-    exportSrtBtn.addEventListener("click", async () => {
-        try {
-            const res = await fetch("/api/session/export/srt", { method: "POST" });
-            const data = await res.json();
-            if (data.download_url) {
-                window.open(data.download_url, "_blank");
-                showToast(`Đã xuất file Phụ đề: ${data.filename}`);
-            }
-        } catch (e) {
-            showToast("Lỗi xuất SRT");
-        }
-    });
-    
     // Copy AI Prompt
     copyAiPromptBtn.addEventListener("click", copyFullAiPrompt);
     
-    // Auto-scroll toggle
+    // Auto-scroll
     autoScrollBtn.addEventListener("click", () => {
         autoScroll = !autoScroll;
         autoScrollBtn.innerHTML = autoScroll 
@@ -380,65 +635,81 @@ function setupEventListeners() {
     // Font controls
     fontIncBtn.addEventListener("click", () => {
         currentFontSize = Math.min(2.5, currentFontSize + 0.15);
-        liveEnglishText.style.fontSize = `${currentFontSize}rem`;
+        liveVietnameseText.style.fontSize = `${currentFontSize}rem`;
     });
     fontDecBtn.addEventListener("click", () => {
         currentFontSize = Math.max(0.9, currentFontSize - 0.15);
-        liveEnglishText.style.fontSize = `${currentFontSize}rem`;
+        liveVietnameseText.style.fontSize = `${currentFontSize}rem`;
     });
     clearViewBtn.addEventListener("click", () => {
         liveKoreanText.textContent = "...";
+        liveVietnameseText.textContent = "...";
         liveEnglishText.textContent = "...";
     });
     
-    // HUD Overlay Controls
+    // HUD
     hudToggleBtn.addEventListener("click", toggleHudOverlay);
     hudCloseBtn.addEventListener("click", () => hudOverlayContainer.style.display = "none");
     hudOpacitySlider.addEventListener("input", (e) => {
-        hudOverlayContainer.style.background = `rgba(10, 14, 24, ${e.target.value})`;
+        hudOverlayContainer.style.background = `rgba(10, 14, 26, ${e.target.value})`;
     });
     hudFontInc.addEventListener("click", () => {
         hudFontSize = Math.min(3.0, hudFontSize + 0.2);
-        hudEnglishText.style.fontSize = `${hudFontSize}rem`;
+        hudVietnameseText.style.fontSize = `${hudFontSize}rem`;
     });
     hudFontDec.addEventListener("click", () => {
         hudFontSize = Math.max(1.0, hudFontSize - 0.2);
-        hudEnglishText.style.fontSize = `${hudFontSize}rem`;
+        hudVietnameseText.style.fontSize = `${hudFontSize}rem`;
     });
-    
-    // Make HUD draggable
     makeDraggable(hudOverlayContainer);
+}
+
+function setupHotkeys() {
+    document.addEventListener("keydown", (e) => {
+        // Press B or Space (when not typing in an input) to bookmark
+        if (e.key === "b" || e.key === "B") {
+            const activeTag = document.activeElement.tagName.toLowerCase();
+            if (activeTag !== "input" && activeTag !== "textarea") {
+                e.preventDefault();
+                bookmarkLastSentence();
+            }
+        }
+    });
 }
 
 // Recording & Pause Toggle
 async function toggleRecording() {
     if (!isRecording) {
         const devId = deviceSelect.value ? parseInt(deviceSelect.value) : null;
+        const subject = subjectSelect.value;
+        const title = lectureTitleInput.value;
+        
         try {
             recordBtn.disabled = true;
             const res = await fetch("/api/start", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ device_id: devId })
+                body: JSON.stringify({ device_id: devId, subject: subject, title: title })
             });
             const data = await res.json();
             if (data.status === "started") {
                 updateRecordingState(true, false);
                 startTimer();
-                showToast("Bắt đầu thu âm bài giảng!");
+                showToast(`Bắt đầu thu âm & dịch môn: ${subject}!`);
             }
         } catch (e) {
-            showToast("Không thể mở microphone. Kiểm tra cài đặt quyền!");
+            showToast("Không thể mở microphone.");
         } finally {
             recordBtn.disabled = false;
         }
     } else {
         try {
             recordBtn.disabled = true;
-            await fetch("/api/stop", { method: "POST" });
+            const res = await fetch("/api/stop", { method: "POST" });
+            const data = await res.json();
             updateRecordingState(false, false);
             stopTimer();
-            showToast("Đã kết thúc phiên thu âm.");
+            showToast("Đã lưu bài giảng và file ghi âm WAV!");
         } catch (e) {
             showToast("Lỗi dừng thu âm");
         } finally {
@@ -451,23 +722,17 @@ async function togglePauseResume() {
     if (!isRecording) return;
     
     if (!isPaused) {
-        // Pause
         try {
             await fetch("/api/pause", { method: "POST" });
             updateRecordingState(true, true);
             showToast("Đã tạm dừng nghe.");
-        } catch (e) {
-            showToast("Lỗi tạm dừng");
-        }
+        } catch (e) {}
     } else {
-        // Resume
         try {
             await fetch("/api/resume", { method: "POST" });
             updateRecordingState(true, false);
             showToast("Tiếp tục nghe giảng...");
-        } catch (e) {
-            showToast("Lỗi tiếp tục");
-        }
+        } catch (e) {}
     }
 }
 
@@ -478,37 +743,31 @@ function updateRecordingState(rec, paused) {
     if (isRecording) {
         pauseResumeBtn.style.display = "inline-flex";
         recordBtn.classList.add("recording");
-        recordBtn.innerHTML = '<i class="fa-solid fa-stop"></i> <span>Stop Listening</span>';
+        recordBtn.innerHTML = '<i class="fa-solid fa-stop"></i> <span>Stop & Save WAV</span>';
         
         if (isPaused) {
             pauseResumeBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span>Resume</span>';
             pauseResumeBtn.className = "btn btn-accent";
-            sessionStatusBadge.textContent = "Paused";
-            sessionStatusBadge.className = "badge";
-            liveStatusText.textContent = "Paused (Click Resume to continue)";
+            liveStatusText.textContent = "Paused (Click Resume để tiếp tục)";
             livePulseDot.className = "pulse-dot";
             updateVolumeVisualizer(0, false);
         } else {
             pauseResumeBtn.innerHTML = '<i class="fa-solid fa-pause"></i> <span>Pause</span>';
             pauseResumeBtn.className = "btn btn-secondary";
-            sessionStatusBadge.textContent = "Recording";
-            sessionStatusBadge.className = "badge active";
-            liveStatusText.textContent = "Listening to lecture...";
+            liveStatusText.textContent = `Đang nghe bài giảng: ${currentSubject}...`;
             livePulseDot.className = "pulse-dot active";
         }
     } else {
         pauseResumeBtn.style.display = "none";
         recordBtn.classList.remove("recording");
         recordBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span>Start Listening</span>';
-        sessionStatusBadge.textContent = "Ready";
-        sessionStatusBadge.className = "badge";
         liveStatusText.textContent = "Ready to listen";
         livePulseDot.className = "pulse-dot";
         updateVolumeVisualizer(0, false);
     }
 }
 
-// Device list
+// Devices
 async function loadDevices() {
     try {
         const res = await fetch("/api/devices");
@@ -529,7 +788,6 @@ async function loadDevices() {
                 deviceSelect.appendChild(opt);
             });
         }
-        showToast("Đã cập nhật danh sách micro");
     } catch (e) {
         console.error("Error loading devices:", e);
     }
@@ -544,9 +802,7 @@ function toggleHudOverlay() {
 function makeDraggable(el) {
     let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
     const header = el.querySelector(".hud-drag-handle");
-    if (header) {
-        header.onmousedown = dragMouseDown;
-    }
+    if (header) header.onmousedown = dragMouseDown;
     
     function dragMouseDown(e) {
         e.preventDefault();
@@ -555,7 +811,6 @@ function makeDraggable(el) {
         document.onmouseup = closeDragElement;
         document.onmousemove = elementDrag;
     }
-    
     function elementDrag(e) {
         e.preventDefault();
         pos1 = pos3 - e.clientX;
@@ -567,7 +822,6 @@ function makeDraggable(el) {
         el.style.bottom = "auto";
         el.style.transform = "none";
     }
-    
     function closeDragElement() {
         document.onmouseup = null;
         document.onmousemove = null;
@@ -581,24 +835,28 @@ function copyFullAiPrompt() {
         return;
     }
     
-    let prompt = `Dưới đây là toàn bộ transcript bài giảng được ghi lại tại trường đại học ở Hàn Quốc (tiếng Hàn gốc và bản dịch tiếng Anh).
-Tên bài giảng: ${lectureTitleInput.value}
+    const subject = subjectSelect.value;
+    const title = lectureTitleInput.value;
+    
+    let prompt = `Dưới đây là toàn bộ transcript bài giảng môn [${subject}] - [${title}] được ghi lại tại trường đại học ở Hàn Quốc (bao gồm tiếng Hàn gốc, tiếng Việt và tiếng Anh).
 
 Nhiệm vụ của bạn:
-1. Tóm tắt toàn diện nội dung bài giảng thành các đề mục rõ ràng, dễ hiểu bằng tiếng Việt.
-2. Trích xuất danh sách thuật ngữ chuyên ngành quan trọng nhất (kèm giải thích tiếng Hàn - Anh - Việt).
-3. Liệt kê các ý quan trọng, ví dụ thực tế hoặc dặn dò thi cử của giáo sư.
+1. Tóm tắt toàn diện nội dung bài học thành các đề mục logic, ngắn gọn, dễ nhớ bằng tiếng Việt.
+2. Trích xuất bảng thuật ngữ chuyên ngành quan trọng (Hàn - Anh - Việt) kèm giải thích chi tiết.
+3. ĐẶC BIỆT CHÚ Ý các câu có đánh dấu [⭐ THI CỬ / QUAN TRỌNG] để dự đoán câu hỏi thi và bài tập.
+4. Viết sơ đồ tư duy hoặc bullet points hệ thống hóa toàn bộ kiến thức của buổi học.
 
 ---
 TRANSCRIPT BÀI GIẢNG:
 `;
     
     allEntries.forEach(item => {
-        prompt += `[${item.timestamp}] 🇰🇷 ${item.korean}\n    🇬🇧 ${item.english}\n\n`;
+        const tag = item.is_bookmark ? "[⭐ THI CỬ / QUAN TRỌNG] " : "";
+        prompt += `[${item.timestamp}] ${tag}\n   🇰🇷 ${item.korean}\n   🇻🇳 ${item.vietnamese || item.english}\n\n`;
     });
     
     navigator.clipboard.writeText(prompt).then(() => {
-        showToast("Đã copy toàn bộ Prompt + Transcript vào Clipboard!");
+        showToast("Đã copy toàn bộ Prompt Ôn Thi + Transcript vào Clipboard!");
     });
 }
 
@@ -632,10 +890,9 @@ function pad(num) {
     return num.toString().padStart(2, "0");
 }
 
-// Helpers
 function showToast(msg) {
     const toast = document.getElementById("toast");
-    toast.innerHTML = `<i class="fa-solid fa-info-circle"></i> ${msg}`;
+    toast.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${msg}`;
     toast.classList.add("show");
     setTimeout(() => toast.classList.remove("show"), 3000);
 }
@@ -648,10 +905,10 @@ function copyText(txt) {
 
 function escapeHtml(text) {
     const div = document.createElement("div");
-    div.textContent = text;
+    div.textContent = text || "";
     return div.innerHTML;
 }
 
 function escapeJs(text) {
-    return text.replace(/'/g, "\\'").replace(/"/g, '\\"');
+    return (text || "").replace(/'/g, "\\'").replace(/"/g, '\\"');
 }
