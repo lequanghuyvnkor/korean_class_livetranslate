@@ -133,13 +133,27 @@ async def start_recording(payload: dict = Body(default={})):
     await broadcast({"type": "state_change", "is_recording": True, "device_id": device_id})
     return {"status": "started", "device_id": device_id}
 
+@app.post("/api/pause")
+async def pause_recording():
+    """Pause listening"""
+    audio_mgr.pause()
+    await broadcast({"type": "state_change", "is_recording": True, "is_paused": True})
+    return {"status": "paused"}
+
+@app.post("/api/resume")
+async def resume_recording():
+    """Resume listening"""
+    audio_mgr.resume()
+    await broadcast({"type": "state_change", "is_recording": True, "is_paused": False})
+    return {"status": "resumed"}
+
 @app.post("/api/stop")
 async def stop_recording():
     """Stop listening"""
     global is_processing_active
     is_processing_active = False
     audio_mgr.stop()
-    await broadcast({"type": "state_change", "is_recording": False})
+    await broadcast({"type": "state_change", "is_recording": False, "is_paused": False})
     return {"status": "stopped"}
 
 @app.post("/api/model")

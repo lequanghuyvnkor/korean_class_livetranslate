@@ -1,6 +1,7 @@
 // Application State
 let ws = null;
 let isRecording = false;
+let isPaused = false;
 let sessionStartTime = null;
 let sessionTimerInterval = null;
 let autoScroll = true;
@@ -11,6 +12,9 @@ let allEntries = [];
 // DOM Elements
 const recordBtn = document.getElementById("mainRecordBtn");
 const recordBtnText = document.getElementById("recordBtnText");
+const pauseResumeBtn = document.getElementById("pauseResumeBtn");
+const pauseBtnText = document.getElementById("pauseBtnText");
+
 const micStatusIcon = document.getElementById("micStatusIcon");
 const audioMonitor = document.getElementById("audioMonitor");
 const volumeBadge = document.getElementById("volumeBadge");
@@ -91,7 +95,7 @@ function initWebSocket() {
 function handleWsMessage(data) {
     switch (data.type) {
         case "init":
-            updateRecordingState(data.is_recording);
+            updateRecordingState(data.is_recording, false);
             if (data.model_size) modelSelect.value = data.model_size;
             if (data.initial_prompt) vocabPrompt.value = data.initial_prompt;
             if (data.lecture_title) lectureTitleInput.value = data.lecture_title;
@@ -102,16 +106,18 @@ function handleWsMessage(data) {
             break;
             
         case "volume_level":
-            updateVolumeVisualizer(data.level, data.is_recording);
+            updateVolumeVisualizer(data.level, data.is_recording && !isPaused);
             break;
             
         case "status":
-            if (data.status === "translating") {
-                liveStatusText.textContent = "AI Translating...";
-                livePulseDot.classList.add("active");
-            } else if (data.status === "listening") {
-                liveStatusText.textContent = "Listening to lecture...";
-                livePulseDot.classList.add("active");
+            if (!isPaused) {
+                if (data.status === "translating") {
+                    liveStatusText.textContent = "AI Translating...";
+                    livePulseDot.className = "pulse-dot active";
+                } else if (data.status === "listening") {
+                    liveStatusText.textContent = "Listening to lecture...";
+                    livePulseDot.className = "pulse-dot active";
+                }
             }
             break;
             
@@ -120,14 +126,14 @@ function handleWsMessage(data) {
             break;
             
         case "state_change":
-            updateRecordingState(data.is_recording);
+            updateRecordingState(data.is_recording, data.is_paused || false);
             break;
     }
 }
 
 // Visualizer
-function updateVolumeVisualizer(level, isRec) {
-    if (!isRec) {
+function updateVolumeVisualizer(level, active) {
+    if (!active) {
         audioMonitor.classList.remove("active");
         micStatusIcon.className = "fa-solid fa-microphone-slash mic-status-icon";
         volumeBadge.textContent = "0%";
@@ -214,13 +220,16 @@ function setupEventListeners() {
     // Record button toggle
     recordBtn.addEventListener("click", toggleRecording);
     
+    // Pause / Resume button
+    pauseResumeBtn.addEventListener("click", togglePauseResume);
+    
     // Refresh Devices
     refreshDevicesBtn.addEventListener("click", loadDevices);
     
     // Model Select
     modelSelect.addEventListener("change", async () => {
         const model = modelSelect.value;
-        showToast(`Đang tải model Faster-Whisper [${model}]...`);
+        showToast(`Đang tải model Whisper [${model}]...`);
         try {
             const res = await fetch("/api/model", {
                 method: "POST",
@@ -349,7 +358,7 @@ function setupEventListeners() {
     makeDraggable(hudOverlayContainer);
 }
 
-// Recording Toggle
+// Recording & Pause Toggle
 async function toggleRecording() {
     if (!isRecording) {
         const devId = deviceSelect.value ? parseInt(deviceSelect.value) : null;
@@ -362,7 +371,7 @@ async function toggleRecording() {
             });
             const data = await res.json();
             if (data.status === "started") {
-                updateRecordingState(true);
+                updateRecordingState(true, false);
                 startTimer();
                 showToast("Bắt đầu thu âm bài giảng!");
             }
@@ -375,9 +384,9 @@ async function toggleRecording() {
         try {
             recordBtn.disabled = true;
             await fetch("/api/stop", { method: "POST" });
-            updateRecordingState(false);
+            updateRecordingState(false, false);
             stopTimer();
-            showToast("Đã tạm dừng thu âm.");
+            showToast("Đã kết thúc phiên thu âm.");
         } catch (e) {
             showToast("Lỗi dừng thu âm");
         } finally {
@@ -386,22 +395,63 @@ async function toggleRecording() {
     }
 }
 
-function updateRecordingState(rec) {
+async function togglePauseResume() {
+    if (!isRecording) return;
+    
+    if (!isPaused) {
+        // Pause
+        try {
+            await fetch("/api/pause", { method: "POST" });
+            updateRecordingState(true, true);
+            showToast("Đã tạm dừng nghe.");
+        } catch (e) {
+            showToast("Lỗi tạm dừng");
+        }
+    } else {
+        // Resume
+        try {
+            await fetch("/api/resume", { method: "POST" });
+            updateRecordingState(true, false);
+            showToast("Tiếp tục nghe giảng...");
+        } catch (e) {
+            showToast("Lỗi tiếp tục");
+        }
+    }
+}
+
+function updateRecordingState(rec, paused) {
     isRecording = rec;
+    isPaused = paused;
+    
     if (isRecording) {
+        pauseResumeBtn.style.display = "inline-flex";
         recordBtn.classList.add("recording");
         recordBtn.innerHTML = '<i class="fa-solid fa-stop"></i> <span>Stop Listening</span>';
-        sessionStatusBadge.textContent = "Recording";
-        sessionStatusBadge.classList.add("active");
-        liveStatusText.textContent = "Listening to lecture...";
-        livePulseDot.classList.add("active");
+        
+        if (isPaused) {
+            pauseResumeBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span>Resume</span>';
+            pauseResumeBtn.className = "btn btn-accent";
+            sessionStatusBadge.textContent = "Paused";
+            sessionStatusBadge.className = "badge";
+            liveStatusText.textContent = "Paused (Click Resume to continue)";
+            livePulseDot.className = "pulse-dot";
+            updateVolumeVisualizer(0, false);
+        } else {
+            pauseResumeBtn.innerHTML = '<i class="fa-solid fa-pause"></i> <span>Pause</span>';
+            pauseResumeBtn.className = "btn btn-secondary";
+            sessionStatusBadge.textContent = "Recording";
+            sessionStatusBadge.className = "badge active";
+            liveStatusText.textContent = "Listening to lecture...";
+            livePulseDot.className = "pulse-dot active";
+        }
     } else {
+        pauseResumeBtn.style.display = "none";
         recordBtn.classList.remove("recording");
         recordBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span>Start Listening</span>';
-        sessionStatusBadge.textContent = "Paused";
-        sessionStatusBadge.classList.remove("active");
-        liveStatusText.textContent = "Paused / Ready";
-        livePulseDot.classList.remove("active");
+        sessionStatusBadge.textContent = "Ready";
+        sessionStatusBadge.className = "badge";
+        liveStatusText.textContent = "Ready to listen";
+        livePulseDot.className = "pulse-dot";
         updateVolumeVisualizer(0, false);
     }
 }
@@ -516,7 +566,7 @@ function resetTimer() {
 }
 
 function updateTimer() {
-    if (!sessionStartTime) return;
+    if (!sessionStartTime || isPaused) return;
     const diffSec = Math.floor((Date.now() - sessionStartTime) / 1000);
     const hrs = Math.floor(diffSec / 3600);
     const mins = Math.floor((diffSec % 3600) / 60);

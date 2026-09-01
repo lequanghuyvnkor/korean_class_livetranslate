@@ -49,6 +49,10 @@
             <button class="btn btn-hud" id="hudToggleBtn" title="Chế độ Overlay ghim nổi trên Slide bài giảng">
                 <i class="fa-solid fa-window-restore"></i> HUD Overlay
             </button>
+            <!-- Pause / Resume Button -->
+            <button class="btn btn-secondary" id="pauseResumeBtn" style="display: none;" title="Tạm dừng / Tiếp tục nghe">
+                <i class="fa-solid fa-pause"></i> <span id="pauseBtnText">Pause</span>
+            </button>
             <!-- Start / Stop Primary Button -->
             <button class="btn btn-primary" id="mainRecordBtn">
                 <i class="fa-solid fa-play"></i> <span id="recordBtnText">Start Listening</span>
@@ -115,14 +119,15 @@
                 <div class="form-group">
                     <label for="modelSelect">Whisper Model:</label>
                     <select id="modelSelect" class="form-control">
-                        <option value="tiny">Tiny (Siêu nhẹ, latency thấp nhất ~0.1s)</option>
-                        <option value="base" selected>Base (Cân bằng, khuyên dùng CPU)</option>
-                        <option value="small">Small (Chính xác cao, từ vựng chuẩn)</option>
+                        <option value="small" selected>Small (Khuyên Dùng: Chuẩn tiếng Hàn, không lặp từ)</option>
+                        <option value="turbo">Large-v3 Turbo (Thông minh nhất, chất lượng cao nhất)</option>
+                        <option value="base">Base (Nhẹ máy, cơ bản)</option>
+                        <option value="tiny">Tiny (Siêu nhẹ, latency thấp nhất)</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label for="vocabPrompt">Thuật ngữ môn học (Glossary Booster):</label>
-                    <textarea id="vocabPrompt" class="form-control" rows="3" placeholder="Nhập các từ chuyên ngành: 인공지능, 운영체제, 회계학, 분자생물학...">한국어 대학교 강의, 전공 수업, 학술 용어</textarea>
+                    <textarea id="vocabPrompt" class="form-control" rows="2" placeholder="Nhập từ khóa môn học cách nhau bởi dấu phẩy, ví dụ: 인공지능, 운영체제, 네트워크, 알고리즘"></textarea>
                     <button class="btn btn-secondary btn-sm mt-1" id="savePromptBtn">
                         <i class="fa-solid fa-check"></i> Áp dụng từ điển
                     </button>
