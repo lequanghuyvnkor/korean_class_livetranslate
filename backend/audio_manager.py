@@ -1,126 +1,80 @@
+import sounddevice as sd
 import numpy as np
 import threading
 import queue
 import time
 import logging
-import soundcard as sc
-import sounddevice as sd
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AudioManager")
 
 class AudioManager:
-    def __init__(self, sample_rate=16000, min_chunk_seconds=3.5, max_chunk_seconds=7.0, silence_threshold=0.015, silence_duration=0.6):
+    def __init__(self, sample_rate=16000, min_chunk_seconds=3.5, max_chunk_seconds=7.0, silence_threshold=0.012, silence_duration=0.6):
         self.sample_rate = sample_rate
         self.min_chunk_seconds = min_chunk_seconds
         self.max_chunk_seconds = max_chunk_seconds
         self.silence_threshold = silence_threshold
         self.silence_duration = silence_duration
         
+        self.stream = None
         self.is_recording = False
         self.is_paused = False
-        self.device_id = None
+        self.device_index = None
         
         # Audio queues
         self.raw_audio_queue = queue.Queue()
         self.processed_chunks_queue = queue.Queue()
         self.current_volume_rms = 0.0
         
-        self.capture_thread = None
-        self.process_thread = None
+        self.worker_thread = None
         self._stop_event = threading.Event()
         
     @staticmethod
     def get_input_devices():
-        """List all available audio input devices (Physical Mics + System Audio Loopback)"""
+        """List all available physical & virtual input microphones cleanly"""
         devices = []
         try:
-            # 1. Soundcard loopback & hardware devices
-            all_mics = sc.all_microphones(include_loopback=True)
-            for idx, mic in enumerate(all_mics):
-                display_name = mic.name
-                if mic.isloopback:
-                    display_name = f"[System Audio Loopback] {mic.name} - Am thanh trong may (Youtube/Zoom)"
-                else:
-                    display_name = f"[Microphone] {mic.name}"
+            device_list = sd.query_devices()
+            default_input_idx = sd.default.device[0]
+            seen_names = set()
+            
+            for idx, dev in enumerate(device_list):
+                if dev.get('max_input_channels', 0) > 0:
+                    raw_name = dev.get('name', f'Microphone {idx}')
+                    # Clean any non-ascii or driver metadata clutter
+                    clean_name = raw_name.encode('ascii', errors='ignore').decode('ascii').strip()
+                    if not clean_name:
+                        clean_name = f"Microphone Device [{idx}]"
+                        
+                    if clean_name in seen_names:
+                        clean_name = f"{clean_name} (Input #{idx})"
+                    seen_names.add(clean_name)
                     
-                devices.append({
-                    "id": mic.id,
-                    "name": display_name,
-                    "channels": 1,
-                    "is_loopback": mic.isloopback,
-                    "is_default": (idx == 0)
-                })
+                    devices.append({
+                        "id": idx,
+                        "name": clean_name,
+                        "channels": dev.get('max_input_channels', 1),
+                        "default_samplerate": dev.get('default_samplerate', 44100),
+                        "is_default": (idx == default_input_idx)
+                    })
         except Exception as e:
-            logger.error(f"Error querying devices with soundcard: {e}")
-            # Fallback to sounddevice
-            try:
-                for idx, dev in enumerate(sd.query_devices()):
-                    if dev.get('max_input_channels', 0) > 0:
-                        devices.append({
-                            "id": str(idx),
-                            "name": dev.get('name'),
-                            "is_loopback": False,
-                            "is_default": (idx == sd.default.device[0])
-                        })
-            except Exception as e2:
-                logger.error(f"Fallback sounddevice failed: {e2}")
-                
+            logger.error(f"Error querying sounddevice input devices: {e}")
+            
         return devices
 
-    def _capture_audio_worker(self, device_id):
-        """Low-latency capture loop using soundcard recorder"""
-        try:
-            if device_id:
-                mic = sc.get_microphone(id=device_id, include_loopback=True)
-            else:
-                # Default to loopback speaker or default mic
-                all_mics = sc.all_microphones(include_loopback=True)
-                mic = all_mics[0] if len(all_mics) > 0 else sc.default_microphone()
-
-            logger.info(f"Started soundcard audio capture on: {mic.name} (loopback={mic.isloopback})")
-            
-            block_frames = int(self.sample_rate * 0.1) # 100ms blocks
-            
-            with mic.recorder(samplerate=self.sample_rate, channels=1, blocksize=block_frames) as recorder:
-                while not self._stop_event.is_set():
-                    data = recorder.record(numframes=block_frames)
-                    if data is None or len(data) == 0:
-                        continue
-                        
-                    audio_1d = data[:, 0].astype(np.float32)
-                    
-                    # Calculate real-time RMS for UI volume meter
-                    rms = float(np.sqrt(np.mean(audio_1d ** 2)))
-                    self.current_volume_rms = rms
-                    
-                    if self.is_recording and not self.is_paused:
-                        self.raw_audio_queue.put(audio_1d)
-                        
-        except Exception as e:
-            logger.error(f"Error in capture worker: {e}")
-            # Fallback to standard sounddevice if soundcard fails
-            self._fallback_sounddevice_capture(device_id)
-
-    def _fallback_sounddevice_capture(self, device_id):
-        """Fallback stream with sounddevice"""
-        logger.info("Using fallback sounddevice stream...")
-        try:
-            dev_idx = None
-            if device_id and device_id.isdigit():
-                dev_idx = int(device_id)
-                
-            def sd_cb(indata, frames, time_info, status):
-                audio_1d = indata[:, 0].copy()
-                self.current_volume_rms = float(np.sqrt(np.mean(audio_1d ** 2)))
-                if self.is_recording and not self.is_paused:
-                    self.raw_audio_queue.put(audio_1d)
-                    
-            with sd.InputStream(samplerate=self.sample_rate, channels=1, dtype='float32', device=dev_idx, blocksize=int(self.sample_rate * 0.1), callback=sd_cb):
-                while not self._stop_event.is_set():
-                    time.sleep(0.05)
-        except Exception as err:
-            logger.error(f"Fallback sounddevice failed: {err}")
+    def _audio_callback(self, indata, frames, time_info, status):
+        """Low-latency callback from SoundDevice stream"""
+        if status:
+            logger.warning(f"SoundDevice status warning: {status}")
+        
+        audio_data = indata[:, 0].copy()
+        
+        # Calculate real-time RMS for UI volume meter
+        rms = float(np.sqrt(np.mean(audio_data ** 2)))
+        self.current_volume_rms = rms
+        
+        if self.is_recording and not self.is_paused:
+            self.raw_audio_queue.put(audio_data)
 
     def _process_audio_loop(self):
         """Accumulate into grammatically complete Korean sentence chunks"""
@@ -166,13 +120,13 @@ class AudioManager:
             except Exception as e:
                 logger.error(f"Error in audio processing loop: {e}")
 
-    def start(self, device_id=None):
-        """Start listening"""
+    def start(self, device_index=None):
+        """Start listening to microphone"""
         if self.is_recording:
             self.is_paused = False
             return True
             
-        self.device_id = device_id
+        self.device_index = device_index
         self._stop_event.clear()
         self.is_paused = False
         
@@ -181,16 +135,26 @@ class AudioManager:
         while not self.processed_chunks_queue.empty():
             self.processed_chunks_queue.get_nowait()
             
-        self.is_recording = True
-        
-        self.capture_thread = threading.Thread(target=self._capture_audio_worker, args=(device_id,), daemon=True)
-        self.capture_thread.start()
-        
-        self.process_thread = threading.Thread(target=self._process_audio_loop, daemon=True)
-        self.process_thread.start()
-        
-        logger.info(f"Audio capture started on device_id: {device_id}")
-        return True
+        try:
+            self.stream = sd.InputStream(
+                samplerate=self.sample_rate,
+                channels=1,
+                dtype='float32',
+                device=self.device_index,
+                blocksize=int(self.sample_rate * 0.1),
+                callback=self._audio_callback
+            )
+            self.stream.start()
+            self.is_recording = True
+            
+            self.worker_thread = threading.Thread(target=self._process_audio_loop, daemon=True)
+            self.worker_thread.start()
+            logger.info(f"Microphone recording started on device_index: {self.device_index}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to start sounddevice audio stream: {e}")
+            self.is_recording = False
+            return False
 
     def pause(self):
         """Pause listening"""
@@ -210,10 +174,16 @@ class AudioManager:
         self.is_paused = False
         self._stop_event.set()
         
-        if self.capture_thread and self.capture_thread.is_alive():
-            self.capture_thread.join(timeout=1.0)
-        if self.process_thread and self.process_thread.is_alive():
-            self.process_thread.join(timeout=1.0)
+        if self.stream:
+            try:
+                self.stream.stop()
+                self.stream.close()
+            except Exception as e:
+                logger.warning(f"Error closing stream: {e}")
+            self.stream = None
+            
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=1.0)
             
         logger.info("Audio recording stopped.")
         return True

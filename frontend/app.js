@@ -465,15 +465,14 @@ async function loadDevices() {
         
         const defOpt = document.createElement("option");
         defOpt.value = "";
-        defOpt.textContent = "Default Microphone / System Audio";
+        defOpt.textContent = "Default Microphone (Mặc định hệ thống)";
         deviceSelect.appendChild(defOpt);
         
         if (data.devices && Array.isArray(data.devices)) {
             data.devices.forEach(dev => {
                 const opt = document.createElement("option");
                 opt.value = dev.id;
-                const chStr = dev.channels ? ` (${dev.channels}ch)` : "";
-                opt.textContent = `${dev.name}${chStr}`;
+                opt.textContent = `${dev.name}`;
                 if (dev.is_default) opt.textContent += " [Default]";
                 deviceSelect.appendChild(opt);
             });

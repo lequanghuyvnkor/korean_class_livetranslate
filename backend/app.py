@@ -120,7 +120,11 @@ def get_devices():
 async def start_recording(payload: dict = Body(default={})):
     """Start listening to specified or default microphone"""
     global translation_task, is_processing_active
-    device_id = payload.get("device_id", None)
+    raw_device_id = payload.get("device_id", None)
+    
+    device_id = None
+    if raw_device_id is not None and str(raw_device_id).isdigit():
+        device_id = int(raw_device_id)
     
     success = audio_mgr.start(device_index=device_id)
     if not success:
