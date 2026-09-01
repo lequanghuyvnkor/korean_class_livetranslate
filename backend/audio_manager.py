@@ -9,9 +9,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AudioManager")
 
 class AudioManager:
-    def __init__(self, sample_rate=16000, chunk_duration=3.5, silence_threshold=0.015, silence_duration=0.7):
+    def __init__(self, sample_rate=16000, min_chunk_seconds=3.5, max_chunk_seconds=7.0, silence_threshold=0.015, silence_duration=0.6):
         self.sample_rate = sample_rate
-        self.chunk_duration = chunk_duration
+        self.min_chunk_seconds = min_chunk_seconds  # Accumulate at least 3.5s of speech so Korean clauses are complete
+        self.max_chunk_seconds = max_chunk_seconds  # Max 7.0s per sentence chunk
         self.silence_threshold = silence_threshold
         self.silence_duration = silence_duration
         
@@ -30,7 +31,7 @@ class AudioManager:
         
     @staticmethod
     def get_input_devices():
-        """List all available audio input devices (Microphones, Line-in, Virtual Cables)"""
+        """List all available audio input devices (Microphones, Stereo Mix, Virtual Cables)"""
         devices = []
         try:
             device_list = sd.query_devices()
@@ -64,11 +65,11 @@ class AudioManager:
             self.raw_audio_queue.put(audio_data)
 
     def _process_audio_loop(self):
-        """Worker thread that accumulates audio and chunks by speech boundaries"""
+        """Worker thread that accumulates audio into complete grammatical Korean sentences"""
         audio_buffer = []
         silence_samples = 0
-        min_speech_samples = int(self.sample_rate * 1.2) # at least 1.2s to provide semantic context for Korean
-        max_chunk_samples = int(self.sample_rate * 6.5) # max 6.5s per sentence chunk
+        min_speech_samples = int(self.sample_rate * self.min_chunk_seconds) # 3.5s minimum for complete Korean grammar
+        max_chunk_samples = int(self.sample_rate * self.max_chunk_seconds) # 7s max
         silence_limit_samples = int(self.sample_rate * self.silence_duration)
         
         while not self._stop_event.is_set():
@@ -88,6 +89,8 @@ class AudioManager:
                 
                 total_samples = sum(len(c) for c in audio_buffer)
                 
+                # Slicing logic: Only emit when professor pauses after speaking a complete phrase (>= 3.5s)
+                # or when buffer reaches max length (7.0s)
                 should_emit = False
                 if total_samples >= min_speech_samples and silence_samples >= silence_limit_samples:
                     should_emit = True
@@ -99,18 +102,10 @@ class AudioManager:
                     audio_buffer = []
                     silence_samples = 0
                     
-                    if np.sqrt(np.mean(full_audio ** 2)) > (self.silence_threshold * 0.8):
+                    if np.sqrt(np.mean(full_audio ** 2)) > (self.silence_threshold * 0.7):
                         self.processed_chunks_queue.put(full_audio)
                         
             except queue.Empty:
-                if len(audio_buffer) > 0 and not self.is_paused:
-                    total_samples = sum(len(c) for c in audio_buffer)
-                    if total_samples >= min_speech_samples:
-                        full_audio = np.concatenate(audio_buffer).astype(np.float32)
-                        audio_buffer = []
-                        silence_samples = 0
-                        if np.sqrt(np.mean(full_audio ** 2)) > (self.silence_threshold * 0.8):
-                            self.processed_chunks_queue.put(full_audio)
                 continue
             except Exception as e:
                 logger.error(f"Error in audio processing loop: {e}")

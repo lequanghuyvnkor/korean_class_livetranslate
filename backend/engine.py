@@ -109,12 +109,12 @@ class TranslatorEngine:
             whisper_kwargs = dict(
                 language=source_lang,
                 initial_prompt=self.initial_prompt if self.initial_prompt else None,
-                beam_size=2,
-                best_of=2,
+                beam_size=3,
+                best_of=3,
                 temperature=0.0,
-                condition_on_previous_text=False, # CRITICAL: stops repetition loops!
+                condition_on_previous_text=False,
                 vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=400),
+                vad_parameters=dict(min_silence_duration_ms=500),
                 compression_ratio_threshold=2.2,
                 no_speech_threshold=0.6,
                 log_prob_threshold=-1.0
